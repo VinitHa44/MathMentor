@@ -1,0 +1,125 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.env
+.env.*
+.venv/
+venv/
+ENV/
+env/
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# =========================
+# Streamlit
+# =========================
+.streamlit/secrets.toml
+.streamlit/*.toml
+.streamlit/*.log
+.streamlit/*.cache
+
+# =========================
+# Environment & Secrets
+# =========================
+*.env
+*.key
+*.pem
+*.crt
+secrets/
+credentials/
+apikeys/
+config/secrets.yaml
+config/secrets.json
+
+# =========================
+# LLM / AI / RAG Artifacts
+# =========================
+# Embeddings & Vector Stores
+vectorstore/
+vector_store/
+vectordb/
+faiss_index/
+chroma/
+chromadb/
+qdrant/
+milvus/
+pinecone/
+
+# LlamaIndex / LangChain caches
+.llama_index/
+.llama_cache/
+langchain_cache/
+.cache/
+rag_cache/
+
+# =========================
+# Models & Weights
+# =========================
+models/
+checkpoints/
+*.bin
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+
+# =========================
+# Data
+# =========================
+data/raw/
+data/processed/
+data/embeddings/
+uploads/
+documents/
+*.csv
+*.jsonl
+*.parquet
+*.pdf
+*.docx
+
+# =========================
+# Logs & Experiments
+# =========================
+logs/
+*.log
+wandb/
+mlruns/
+tensorboard/
+experiments/
+
+# =========================
+# Notebooks & Research
+# =========================
+notebooks/.ipynb_checkpoints/
+research/
+drafts/
+
+# =========================
+# OS / Editor
+# =========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# Build / Deployment
+# =========================
+dist/
+build/
+*.egg-info/
+docker-compose.override.yml

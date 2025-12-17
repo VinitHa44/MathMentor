@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  frontend:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE_URL=${API_BASE_URL:-http://backend:8000}
+      - OCR_PROVIDER=Tesseract
+      - ASR_PROVIDER=Whisper
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - mathmentor
+
+networks:
+  mathmentor:
+    driver: bridge
+
+volumes:
+  data:
+  logs:
