@@ -38,6 +38,122 @@ class VerifierAgent:
         Returns:
             Verification result with correctness, issues, suggestions
         """
+        # Try rule-based verification first for deterministic topics
+        if topic.lower() == "probability":
+            rule_result = self._verify_probability(problem_text, solution_text, final_answer)
+            if rule_result:
+                return rule_result
+        
+        # Fall back to LLM-based verification for complex cases
+        return self._verify_with_llm(problem_text, solution_text, final_answer, topic, retrieved_context)
+    
+    def _verify_probability(self, problem_text: str, solution_text: str, final_answer: str) -> Dict[str, Any]:
+        """Rule-based verification for probability problems"""
+        import re
+        from math import gcd
+        
+        # Check for conditional probability pattern
+        if any(kw in problem_text.lower() for kw in ['who plays', 'also plays', 'conditional', 'given that']):
+            # Extract numbers
+            numbers = [int(n) for n in re.findall(r'\b\d+\b', problem_text)]
+            
+            if len(numbers) >= 3:
+                # Find "play both" to get intersection
+                both_match = re.search(r'(\d+)\s+students?\s+play\s+both', problem_text.lower())
+                first_sport_match = re.search(r'(\d+)\s+students?\s+play\s+(soccer|basketball|\w+)', problem_text.lower())
+                
+                if both_match and first_sport_match:
+                    both = int(both_match.group(1))
+                    first_count = int(first_sport_match.group(1))
+                    
+                    # Expected answer: both/first_count simplified
+                    divisor = gcd(both, first_count)
+                    expected_num = both // divisor
+                    expected_denom = first_count // divisor
+                    expected = f"{expected_num}/{expected_denom}"
+                    
+                    # Check if final answer matches
+                    answer_clean = final_answer.strip()
+                    is_correct = answer_clean == expected
+                    
+                    if not is_correct:
+                        return {
+                            "success": True,
+                            "is_correct": False,
+                            "confidence": 0.99,
+                            "issues": [f"Expected {expected}, got {answer_clean}"],
+                            "suggestions": [f"Conditional probability P(both|first) = {both}/{first_count} = {expected}"],
+                            "verification_text": f"Conditional probability should be {expected}"
+                        }
+                    
+                    return {
+                        "success": True,
+                        "is_correct": True,
+                        "confidence": 0.99,
+                        "issues": [],
+                        "suggestions": [],
+                        "verification_text": "Correct conditional probability calculation"
+                    }
+        
+        # Original simple probability check
+        import re
+        
+        # Extract numbers from PROBLEM (not solution)
+        problem_numbers = [int(n) for n in re.findall(r'\b\d+\b', problem_text)]
+        if len(problem_numbers) < 2:
+            return None  # Too complex for rule-based
+        
+        # Check if it's a simple single-event probability
+        keywords = ['marble', 'card', 'ball', 'coin', 'die', 'dice']
+        if not any(kw in problem_text.lower() for kw in keywords):
+            return None
+        
+        # Extract answer fraction from final_answer
+        answer_match = re.search(r'(\d+)/(\d+)', final_answer)
+        if not answer_match:
+            return None  # Cannot parse answer
+        
+        numerator = int(answer_match.group(1))
+        denominator = int(answer_match.group(2))
+        
+        issues = []
+        
+        # Check 1: Total should equal sum of parts
+        total_from_problem = sum(problem_numbers)
+        if denominator != total_from_problem:
+            issues.append(f"Denominator ({denominator}) should equal total from problem ({total_from_problem})")
+        
+        # Check 2: Probability should be between 0 and 1
+        if numerator > denominator:
+            issues.append(f"Probability ({numerator}/{denominator}) is greater than 1")
+        
+        # Check 3: Numerator should be one of the numbers in problem
+        if numerator not in problem_numbers:
+            issues.append(f"Numerator ({numerator}) should be one of the counts from problem")
+        
+        # Check 4: Check if fraction is simplified
+        from math import gcd
+        if gcd(numerator, denominator) > 1:
+            issues.append(f"Fraction {numerator}/{denominator} is not in simplest form")
+        
+        # Determine correctness
+        is_correct = len(issues) == 0
+        
+        return {
+            "success": True,
+            "is_correct": is_correct,
+            "confidence": 0.99 if is_correct else 0.70,  # Return as 0-1 range
+            "issues": issues if issues else [],
+            "suggestions": [] if is_correct else ["Review calculations", "Check if fraction is simplified"],
+            "verification_text": "Rule-based verification for basic probability",
+            "needs_human_review": not is_correct
+        }
+    
+    def _verify_with_llm(self, problem_text: str, solution_text: str, final_answer: str, 
+                         topic: str, retrieved_context: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        LLM-based verification for complex problems
+        """
         # Build context section
         context_text = self._format_context(retrieved_context)
         
@@ -101,14 +217,17 @@ Provide your verification:"""
             issues = self._extract_issues(response_text)
             suggestions = self._extract_suggestions(response_text)
             
+            # Convert confidence from 0-100 to 0-1 range
+            confidence_normalized = confidence / 100.0 if confidence > 1 else confidence
+            
             return {
                 "success": True,
                 "is_correct": is_correct,
-                "confidence": confidence,
+                "confidence": confidence_normalized,
                 "issues": issues,
                 "suggestions": suggestions,
                 "verification_text": response_text,
-                "needs_human_review": not is_correct or confidence < 80
+                "needs_human_review": not is_correct or confidence_normalized < 0.80
             }
         
         except Exception as e:
@@ -128,14 +247,24 @@ Provide your verification:"""
         
         formatted = []
         for i, item in enumerate(retrieved_context, 1):
-            text = item['text']
-            metadata = item['metadata']
+            # Skip non-dict items
+            if not isinstance(item, dict):
+                continue
+                
+            text = item.get('text', '')
+            metadata = item.get('metadata', {})
+            
+            # Skip if essential fields are missing
+            if not text:
+                continue
+            
+            source = metadata.get('source', 'Unknown') if isinstance(metadata, dict) else 'Unknown'
             
             formatted.append(
-                f"[Ref {i}] (Source: {metadata['source']})\n{text}"
+                f"[Ref {i}] (Source: {source})\n{text}"
             )
         
-        return "\n\n".join(formatted[:3])  # Top 3 for verification
+        return "\n\n".join(formatted[:3]) if formatted else "No context for verification."  # Top 3 for verification
     
     def _parse_correctness(self, text: str) -> bool:
         """Parse if solution is correct"""

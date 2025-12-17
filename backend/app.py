@@ -13,11 +13,6 @@ from PIL import Image
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-import uuid
-from datetime import datetime
-
-# Global progress tracking
-progress_tracker: Dict[str, Dict[str, Any]] = {}
 
 # Load environment variables from .env file
 env_path = Path(__file__).parent.parent / '.env'
@@ -85,7 +80,11 @@ class TextRequest(BaseModel):
 class SolveRequest(BaseModel):
     problem: str
     settings: Optional[Dict[str, Any]] = None
-    session_id: Optional[str] = None  # For tracking progress
+    request_review: Optional[bool] = False  # Manual HITL trigger
+    force_continue: Optional[bool] = False  # Override HITL and continue
+    corrected_problem: Optional[str] = None  # Human-corrected problem text
+    ocr_confidence: Optional[float] = None  # OCR confidence for HITL trigger
+    asr_confidence: Optional[float] = None  # ASR confidence for HITL trigger
 
 class FeedbackRequest(BaseModel):
     problem_id: str
@@ -270,23 +269,6 @@ async def parse_problem(request: TextRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Parsing failed: {str(e)}")
 
-@app.get("/api/progress/{session_id}")
-async def get_progress(session_id: str):
-    """
-    Get current progress of a solve operation
-    
-    Args:
-        session_id: Unique session identifier
-        
-    Returns:
-        Current progress status and step information
-    """
-    if session_id not in progress_tracker:
-        raise HTTPException(status_code=404, detail="Session not found")
-    
-    return progress_tracker[session_id]
-
-
 @app.post("/api/solve")
 async def solve_problem(request: SolveRequest):
     """
@@ -302,21 +284,30 @@ async def solve_problem(request: SolveRequest):
         from datetime import datetime
         agent_trace = []
         
-        # Generate session ID if not provided
-        session_id = request.session_id or str(uuid.uuid4())
+        # Initialize HITL (Human-in-the-Loop) flags
+        needs_human_review = False
+        hitl_reason = []
         
-        # Initialize progress tracking
-        progress_tracker[session_id] = {
-            "status": "in_progress",
-            "current_step": "Parsing problem",
-            "step_number": 1,
-            "total_steps": 6,
-            "details": "Analyzing problem structure and extracting key information",
-            "timestamp": datetime.now().isoformat()
-        }
+        # HITL Trigger: Low OCR confidence
+        if request.ocr_confidence is not None and request.ocr_confidence < 0.6:
+            needs_human_review = True
+            hitl_reason.append("Low OCR confidence")
+        
+        # HITL Trigger: Low ASR confidence
+        if request.asr_confidence is not None and request.asr_confidence < 0.6:
+            needs_human_review = True
+            hitl_reason.append("Unclear audio transcription")
+        
+        # Check if manual review requested
+        if request.request_review:
+            needs_human_review = True
+            hitl_reason.append("User requested review")
+        
+        # Use corrected problem if provided (human override)
+        problem_text = request.corrected_problem if request.corrected_problem else request.problem
         
         # STEP 1: Parse the problem
-        parsed = parser_agent.parse(request.problem)
+        parsed = parser_agent.parse(problem_text)
         agent_trace.append({
             "agent": "Parser Agent",
             "status": "completed",
@@ -324,27 +315,51 @@ async def solve_problem(request: SolveRequest):
             "timestamp": datetime.now().isoformat()
         })
         
-        # Update progress
-        progress_tracker[session_id].update({
-            "current_step": "Routing to agents",
-            "step_number": 2,
-            "details": f"Problem identified as {parsed.get('topic', 'general')} - routing to appropriate solver",
-            "timestamp": datetime.now().isoformat()
-        })
+        # HITL Trigger: Parser ambiguity
+        if parsed.get('needs_clarification', False):
+            needs_human_review = True
+            hitl_reason.append("Parser detected ambiguity")
+        
+        # MEMORY LEARNING: Search for similar problems
+        topic = parsed.get('topic', 'general')
+        variables = parsed.get('variables', {})
+        
+        similar_problems = memory_service.find_similar_problems(topic, variables, limit=3)
+        if similar_problems:
+            agent_trace.append({
+                "agent": "Memory Service",
+                "status": "completed",
+                "output": {
+                    "action": "Found similar problems",
+                    "count": len(similar_problems),
+                    "similarity_scores": [p.get('similarity', 0) for p in similar_problems]
+                },
+                "timestamp": datetime.now().isoformat()
+            })
+        
+        # Retrieve solution patterns for topic
+        solution_patterns = memory_service.get_solution_patterns(topic)
+        if solution_patterns:
+            agent_trace.append({
+                "agent": "Memory Service",
+                "status": "completed",
+                "output": {
+                    "action": "Retrieved solution patterns",
+                    "pattern_count": len(solution_patterns),
+                    "top_pattern": solution_patterns[0]['steps'][:2] if solution_patterns else []
+                },
+                "timestamp": datetime.now().isoformat()
+            })
         
         # Check if clarification needed
-        if parsed.get('needs_clarification', False):
-            progress_tracker[session_id].update({
-                "status": "needs_clarification",
-                "current_step": "Clarification required",
-                "details": parsed.get('clarification_reason', 'Problem unclear')
-            })
+        if parsed.get('needs_clarification', False) and not request.force_continue:
             return {
                 "status": "needs_clarification",
                 "parsed_problem": parsed,
                 "clarification_reason": parsed.get('clarification_reason', 'Problem unclear'),
                 "agent_trace": agent_trace,
-                "session_id": session_id
+                "needs_human_review": needs_human_review,
+                "hitl_reason": hitl_reason
             }
         
         # STEP 2: Route intent
@@ -356,35 +371,30 @@ async def solve_problem(request: SolveRequest):
             "timestamp": datetime.now().isoformat()
         })
         
-        # Update progress
-        progress_tracker[session_id].update({
-            "current_step": "Retrieving knowledge",
-            "step_number": 3,
-            "details": "Searching knowledge base for relevant examples and concepts",
-            "timestamp": datetime.now().isoformat()
-        })
-        
-        # STEP 3: RAG Retrieval
+        # STEP 3: RAG Retrieval (skip for simple problems)
         topic = parsed.get('topic', 'general')
-        retrieved_context = rag_service.retrieve(
-            query=request.problem,
-            top_k=5,
-            topic_filter=topic if topic != 'general' else None
-        )
-        agent_trace.append({
-            "agent": "RAG Retrieval",
-            "status": "completed",
-            "output": {"chunks_retrieved": len(retrieved_context)},
-            "timestamp": datetime.now().isoformat()
-        })
+        skip_rag = routing.get('skip_rag', False)
         
-        # Update progress
-        progress_tracker[session_id].update({
-            "current_step": "Solving problem",
-            "step_number": 4,
-            "details": f"Applying {topic} techniques with {len(retrieved_context)} reference examples",
-            "timestamp": datetime.now().isoformat()
-        })
+        if skip_rag:
+            retrieved_context = []
+            agent_trace.append({
+                "agent": "RAG Retrieval",
+                "status": "skipped",
+                "output": {"reason": "Simple problem - no context needed"},
+                "timestamp": datetime.now().isoformat()
+            })
+        else:
+            retrieved_context = rag_service.retrieve(
+                query=request.problem,
+                top_k=5,
+                topic_filter=topic if topic != 'general' else None
+            )
+            agent_trace.append({
+                "agent": "RAG Retrieval",
+                "status": "completed",
+                "output": {"chunks_retrieved": len(retrieved_context)},
+                "timestamp": datetime.now().isoformat()
+            })
         
         # STEP 4: Solve with retrieved context
         solution_result = solver_agent.solve(
@@ -402,20 +412,7 @@ async def solve_problem(request: SolveRequest):
         })
         
         if not solution_result['success']:
-            progress_tracker[session_id].update({
-                "status": "failed",
-                "current_step": "Solving failed",
-                "details": solution_result.get('error', 'Unknown error')
-            })
             raise Exception(solution_result.get('error', 'Solving failed'))
-        
-        # Update progress
-        progress_tracker[session_id].update({
-            "current_step": "Verifying solution",
-            "step_number": 5,
-            "details": "Checking solution correctness and consistency",
-            "timestamp": datetime.now().isoformat()
-        })
         
         # STEP 5: Verify solution
         verification_result = verifier_agent.verify(
@@ -432,40 +429,96 @@ async def solve_problem(request: SolveRequest):
             "timestamp": datetime.now().isoformat()
         })
         
-        # Update progress
-        progress_tracker[session_id].update({
-            "current_step": "Generating explanation",
-            "step_number": 6,
-            "details": "Creating detailed explanation with examples",
-            "timestamp": datetime.now().isoformat()
-        })
+        # HITL Trigger: Verifier failure or low confidence
+        if not verification_result.get('is_correct', False):
+            needs_human_review = True
+            hitl_reason.append("Verifier detected errors")
+        elif verification_result.get('confidence', 0) < 0.6:
+            needs_human_review = True
+            hitl_reason.append("Low verification confidence")
         
-        # STEP 6: Generate explanation
-        explanation_result = explainer_agent.explain(
+        # If HITL required, stop pipeline and return for human review
+        if needs_human_review and not request.force_continue:
+            # Store partial problem in memory to get problem_id
+            problem_id = memory_service.store_problem(
+                problem_text=problem_text,
+                parsed_data=parsed,
+                solution=solution_result,
+                verification=verification_result,
+                retrieved_context=retrieved_context,
+                agent_trace=agent_trace
+            )
+            
+            return {
+                "status": "needs_human_review",
+                "problem_id": problem_id,
+                "needs_human_review": True,
+                "hitl_reason": hitl_reason,
+                "parsed_problem": parsed,
+                "solution": {
+                    "problem": request.problem,
+                    "topic": topic,
+                    "final_answer": solution_result['final_answer'],
+                    "steps": solution_result['steps'],
+                    "solution_text": solution_result['solution_text'],
+                    "confidence": verification_result.get('confidence', 50),
+                    "verification_passed": verification_result.get('is_correct', False)
+                },
+                "verification": {
+                    "is_correct": verification_result.get('is_correct', False),
+                    "confidence": verification_result.get('confidence', 0),
+                    "issues": verification_result.get('issues', [])
+                },
+                "agent_trace": agent_trace
+            }
+        
+        # STEP 6: Generate explanation (ONLY if verification passed)
+        if verification_result.get('is_correct', False):
+            explanation_result = explainer_agent.explain(
+                problem_text=request.problem,
+                solution_text=solution_result['solution_text'],
+                final_answer=solution_result['final_answer'],
+                topic=topic,
+                solver_steps=solution_result.get('steps', [])
+            )
+            agent_trace.append({
+                "agent": "Explainer Agent",
+                "status": "completed" if explanation_result['success'] else "failed",
+                "output": explanation_result,
+                "timestamp": datetime.now().isoformat()
+            })
+        else:
+            # Skip explainer when verification fails
+            explanation_result = {
+                "success": False,
+                "explanation_text": "Solution needs review before explanation can be generated.",
+                "key_concept": "",
+                "analogy": "",
+                "common_mistakes": ""
+            }
+            agent_trace.append({
+                "agent": "Explainer Agent",
+                "status": "skipped",
+                "output": {"reason": "Verification failed"},
+                "timestamp": datetime.now().isoformat()
+            })
+        
+        # Store in memory for self-learning
+        problem_id = memory_service.store_problem(
             problem_text=request.problem,
-            solution_text=solution_result['solution_text'],
-            final_answer=solution_result['final_answer'],
-            topic=topic
+            parsed_data=parsed,
+            solution=solution_result,
+            verification=verification_result,
+            retrieved_context=retrieved_context,
+            agent_trace=agent_trace
         )
-        agent_trace.append({
-            "agent": "Explainer Agent",
-            "status": "completed" if explanation_result['success'] else "failed",
-            "output": explanation_result,
-            "timestamp": datetime.now().isoformat()
-        })
-        
-        # Update progress - completed
-        progress_tracker[session_id].update({
-            "status": "completed",
-            "current_step": "Complete",
-            "step_number": 6,
-            "details": "Solution ready!",
-            "timestamp": datetime.now().isoformat()
-        })
         
         # Build final response
         return {
             "status": "success",
+            "problem_id": problem_id,
+            "needs_human_review": needs_human_review,
+            "hitl_reason": hitl_reason,
             "parsed_problem": parsed,
             "solution": {
                 "problem": request.problem,
@@ -473,7 +526,7 @@ async def solve_problem(request: SolveRequest):
                 "final_answer": solution_result['final_answer'],
                 "steps": solution_result['steps'],
                 "solution_text": solution_result['solution_text'],
-                "confidence": parsed.get('confidence', 0.8),
+                "confidence": verification_result.get('confidence', 50),  # Use verifier confidence
                 "verification_passed": verification_result.get('is_correct', False),
                 "verification_confidence": verification_result.get('confidence', 0)
             },
@@ -493,12 +546,13 @@ async def solve_problem(request: SolveRequest):
             "agent_trace": agent_trace,
             "retrieved_context": [
                 {
-                    "text": item['text'],
-                    "source": item['metadata']['source'],
-                    "topic": item['metadata']['topic'],
-                    "score": item['score']
+                    "text": item.get('text', '') if isinstance(item, dict) else '',
+                    "source": item.get('metadata', {}).get('source', '') if isinstance(item, dict) else '',
+                    "topic": item.get('metadata', {}).get('topic', '') if isinstance(item, dict) else '',
+                    "score": item.get('score', 0) if isinstance(item, dict) else 0
                 }
                 for item in retrieved_context
+                if isinstance(item, dict)
             ]
         }
         
@@ -516,7 +570,6 @@ async def solve_problem(request: SolveRequest):
         result = {
             "status": "success",
             "problem_id": problem_id,
-            "session_id": session_id,
             "parsed_problem": parsed,
             "solution": {
                 "problem": request.problem,
@@ -544,12 +597,13 @@ async def solve_problem(request: SolveRequest):
             "agent_trace": agent_trace,
             "retrieved_context": [
                 {
-                    "text": item['text'],
-                    "source": item['metadata']['source'],
-                    "topic": item['metadata']['topic'],
-                    "score": item['score']
+                    "text": item.get('text', '') if isinstance(item, dict) else '',
+                    "source": item.get('metadata', {}).get('source', '') if isinstance(item, dict) else '',
+                    "topic": item.get('metadata', {}).get('topic', '') if isinstance(item, dict) else '',
+                    "score": item.get('score', 0) if isinstance(item, dict) else 0
                 }
                 for item in retrieved_context
+                if isinstance(item, dict)
             ]
         }
         
@@ -576,6 +630,11 @@ async def submit_feedback(request: FeedbackRequest):
             user_comment=request.user_comment,
             corrected_solution=request.corrected_solution
         )
+        
+        # If user provided corrected solution, store as learning signal
+        if request.corrected_solution:
+            # This teaches the system from human corrections
+            agent_trace_note = f"Learning from correction: {request.user_comment or 'No comment'}"
         
         return {
             "status": "success",

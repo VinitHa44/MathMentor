@@ -6,6 +6,8 @@ Uses OpenAI Whisper for audio transcription
 import whisper
 import tempfile
 import os
+import shutil
+import subprocess
 from typing import Dict, Any
 import numpy as np
 
@@ -20,11 +22,37 @@ class ASRService:
             model_size: Whisper model size (tiny, base, small, medium, large)
         """
         self.model_size = model_size
-        try:
-            self.model = whisper.load_model(model_size)
-        except Exception as e:
-            print(f"Error loading Whisper model: {e}")
+        self.ffmpeg_available = self._check_ffmpeg()
+        
+        if not self.ffmpeg_available:
+            print("⚠️ WARNING: FFmpeg not found in system PATH!")
+            print("Audio transcription requires FFmpeg to be installed.")
+            print("Please install FFmpeg:")
+            print("1. Download from: https://www.gyan.dev/ffmpeg/builds/")
+            print("2. Extract and add to system PATH")
+            print("3. Or use: winget install FFmpeg")
             self.model = None
+            return
+        
+        try:
+            print(f"Loading Whisper model: {model_size}...")
+            self.model = whisper.load_model(model_size)
+            print(f"✅ Whisper model '{model_size}' loaded successfully")
+        except Exception as e:
+            print(f"❌ Error loading Whisper model: {e}")
+            self.model = None
+    
+    def _check_ffmpeg(self) -> bool:
+        """Check if FFmpeg is available in system PATH"""
+        try:
+            result = subprocess.run(
+                ["ffmpeg", "-version"],
+                capture_output=True,
+                timeout=5
+            )
+            return result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
     
     def transcribe_audio(self, audio_data: bytes) -> Dict[str, Any]:
         """
@@ -36,6 +64,19 @@ class ASRService:
         Returns:
             Dict with transcribed text and confidence
         """
+        if not self.ffmpeg_available:
+            return {
+                "text": "FFmpeg is not installed. Please install FFmpeg to use audio transcription.\n\n"
+                        "Installation options:\n"
+                        "1. Download from: https://www.gyan.dev/ffmpeg/builds/\n"
+                        "2. Extract and add bin folder to system PATH\n"
+                        "3. Or use: winget install FFmpeg\n"
+                        "4. Restart the backend after installation",
+                "confidence": 0.0,
+                "error": "FFmpeg not found in system PATH",
+                "provider": "whisper"
+            }
+        
         if self.model is None:
             return {
                 "text": "Whisper model not loaded. Please restart backend.",

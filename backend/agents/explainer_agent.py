@@ -23,7 +23,7 @@ class ExplainerAgent:
         solution_text: str,
         final_answer: str,
         topic: str,
-        student_level: str = "jee_basic"
+        solver_steps: list = None
     ) -> Dict[str, Any]:
         """
         Generate natural language explanation
@@ -33,54 +33,61 @@ class ExplainerAgent:
             solution_text: Solution to explain
             final_answer: Final answer
             topic: Problem topic
-            student_level: Target level (jee_basic, jee_intermediate, jee_advanced)
+            solver_steps: Steps from solver agent
         
         Returns:
             Explanation with analogies, key concepts, common mistakes
         """
+        # Format solver steps for reference
+        steps_text = "\n".join([f"{i+1}. {step}" for i, step in enumerate(solver_steps)]) if solver_steps else solution_text
+        
         # Build explainer prompt
-        system_prompt = f"""You are a friendly math tutor explaining solutions to JEE students.
+        system_prompt = """You are a clear and concise math tutor.
 
 EXPLANATION STYLE:
-- Use simple, clear language
-- Include real-world analogies
-- Highlight key concepts
-- Point out common mistakes
-- Encourage understanding over memorization
+- Brief and focused (3-4 sentences per section)
+- No emojis or excessive storytelling
+- Clear, exam-oriented language
+- Suitable for high school and college students
+- Reference the solver's steps directly
 
-TARGET LEVEL: {student_level}
+Your goal: Help students understand the concept quickly and clearly."""
 
-Your goal is to help students understand WHY, not just HOW."""
-
-        user_prompt = f"""Explain this solution in a way that helps a student understand:
+        user_prompt = f"""Based on the solver's solution, create a brief explanation:
 
 **Problem:** {problem_text}
 
-**Solution:**
-{solution_text}
+**Solver Steps:**
+{steps_text}
 
 **Final Answer:** {final_answer}
 
 **Topic:** {topic}
 
 **Your Task:**
-Create a clear explanation that includes:
-1. Key Concept: What's the main idea?
-2. Why This Approach: Why did we solve it this way?
-3. Step Breakdown: Explain each major step
-4. Analogy: Real-world comparison (if applicable)
-5. Common Mistakes: What to avoid
-6. Pro Tip: Useful insight for similar problems
+Provide a concise explanation with these sections:
 
-Make it engaging and easy to understand:"""
+1. **Key Concept** (2-3 sentences): What mathematical principle is used?
+
+2. **Why This Approach** (2-3 sentences): Why is this the right method?
+
+3. **Step Explanation** (brief): Reference the solver steps above and explain any non-obvious parts.
+
+4. **Common Mistakes** (2-3 points): What errors do students typically make?
+
+5. **Quick Tip** (1 sentence): One useful insight for similar problems.
+
+**CRITICAL**: Do NOT mention "with/without replacement" unless explicitly stated in the problem. For single-draw problems, replacement is irrelevant.
+
+Keep it professional and focused:"""
 
         # Generate explanation
         try:
             response = self.llm.generate(
                 prompt=user_prompt,
                 system=system_prompt,
-                temperature=0.7,  # Higher for creative explanations
-                max_tokens=2000
+                temperature=0.5,  # Lower for more focused explanations
+                max_tokens=800  # Reduced for conciseness
             )
             
             # Extract text from response dict

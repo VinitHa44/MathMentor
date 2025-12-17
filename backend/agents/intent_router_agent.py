@@ -59,6 +59,26 @@ class IntentRouterAgent:
                 "needs_solution": True  # Need solution to verify
             }
         
+        # Skip RAG for simple probability (including conditional)
+        if topic.lower() == "probability" and self._is_simple_probability(problem_text):
+            return {
+                "primary_agent": "solver",
+                "reason": "Simple probability - direct calculation",
+                "next_agents": ["verifier", "explainer"],
+                "pipeline": "minimal",
+                "skip_rag": True
+            }
+        
+        # Check if this is a simple single-event probability
+        if topic.lower() == "probability" and self._is_simple_probability(problem_text):
+            return {
+                "primary_agent": "solver",
+                "reason": "Simple single-event probability - no RAG needed",
+                "next_agents": ["verifier", "explainer"],
+                "pipeline": "simple",
+                "skip_rag": True
+            }
+        
         # Standard flow: Solve -> Verify -> Explain
         return {
             "primary_agent": "solver",
@@ -93,3 +113,49 @@ class IntentRouterAgent:
             "review"
         ]
         return any(keyword in message_lower for keyword in verification_keywords)
+    
+    def _is_simple_probability(self, problem_text: str) -> bool:
+        """
+        Detect if this is a simple probability that doesn't need RAG
+        
+        Examples:
+        - "What is the probability of drawing a blue marble?"
+        - "Probability that a soccer player also plays basketball?"
+        """
+        problem_lower = problem_text.lower()
+        
+        # Check for conditional probability (simple enough for direct calculation)
+        is_conditional = any(kw in problem_lower for kw in [
+            'who plays', 'also plays', 'conditional probability',
+            'given that', 'among those'
+        ])
+        
+        # Single event indicators
+        single_event_keywords = [
+            'randomly pick',
+            'draw one',
+            'select one',
+            'choose one',
+            'randomly select',
+            'probability of selecting',
+            'probability of drawing'
+        ]
+        
+        # Simple objects
+        simple_objects = ['marble', 'card', 'ball', 'coin', 'students']
+        
+        # Complex multi-stage indicators (these need RAG)
+        complex_indicators = [
+            'without replacement',
+            'at least',
+            'neither',
+            'sequence',
+            'order matters'
+        ]
+        
+        has_single_event = any(kw in problem_lower for kw in single_event_keywords)
+        has_simple_object = any(obj in problem_lower for obj in simple_objects)
+        has_multi_stage_complexity = any(ind in problem_lower for ind in complex_indicators)
+        
+        # Simple if: conditional OR (single-event + simple-object) AND no multi-stage
+        return (is_conditional or (has_single_event and has_simple_object)) and not has_multi_stage_complexity

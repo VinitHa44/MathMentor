@@ -57,6 +57,14 @@ def initialize_session_state():
         st.session_state.solution = None
     if 'hitl_required' not in st.session_state:
         st.session_state.hitl_required = False
+    if 'hitl_reason' not in st.session_state:
+        st.session_state.hitl_reason = []
+    if 'hitl_corrected_problem' not in st.session_state:
+        st.session_state.hitl_corrected_problem = ""
+    if 'hitl_corrected_solution' not in st.session_state:
+        st.session_state.hitl_corrected_solution = ""
+    if 'human_decision' not in st.session_state:
+        st.session_state.human_decision = None  # 'approve', 'reject', or None
     if 'feedback_submitted' not in st.session_state:
         st.session_state.feedback_submitted = False
     if 'show_memory' not in st.session_state:
@@ -65,6 +73,10 @@ def initialize_session_state():
         st.session_state.problem_counter = 0
     if 'request_timeout' not in st.session_state:
         st.session_state.request_timeout = 600  # Default 10 minutes
+    if 'current_problem_id' not in st.session_state:
+        st.session_state.current_problem_id = None
+    if 'show_correction_form' not in st.session_state:
+        st.session_state.show_correction_form = False
 
 initialize_session_state()
 
@@ -239,15 +251,15 @@ else:
                         except Exception as e:
                             st.error(f"❌ Unexpected error: {type(e).__name__}: {str(e)}")
         
-        with col2:
-            if uploaded_image:
-                st.markdown("#### 💡 Tips")
-                st.info("""
-                ✓ Good lighting
-                ✓ Clear handwriting
-                ✓ No glare
-                ✓ High resolution
-                """)
+        # with col2:
+        #     if uploaded_image:
+        #         st.markdown("#### 💡 Tips")
+        #         st.info("""
+        #         ✓ Good lighting
+        #         ✓ Clear handwriting
+        #         ✓ No glare
+        #         ✓ High resolution
+        #         """)
     
     # AUDIO INPUT TAB
     with input_mode[1]:
@@ -391,217 +403,149 @@ else:
             if st.button("✅ Confirm & Solve", type="primary", width='stretch'):
                 st.session_state.extracted_text = edited_text
                 
-                # Generate session ID for progress tracking
-                import uuid
-                session_id = str(uuid.uuid4())
-                
-                # Create progress display area
-                progress_container = st.empty()
-                status_container = st.empty()
-                time_container = st.empty()
-                
-                # Trigger solving with progress tracking
-                start_time = time.time()
-                
-                try:
-                    # Call backend parse API first
-                    parse_response = requests.post(
-                        f"{API_BASE_URL}/api/parse",
-                        json={"text": edited_text},
-                        proxies={"http": None, "https": None}
-                    )
-                    
-                    if parse_response.status_code != 200:
-                        st.error(f"Failed to parse problem: {parse_response.json().get('detail', 'Unknown error')}")
-                        st.stop()
-                    
-                    parsed = parse_response.json()
-                    
-                    # Use actual parsed data from LLM Parser Agent
-                    st.session_state.agent_trace = [
-                        {
-                            "agent": "Parser Agent",
-                            "status": "completed",
-                            "output": parsed,
-                            "timestamp": datetime.now().isoformat()
-                        }
-                    ]
-                    
-                    # Check if clarification is needed
-                    if parsed.get("needs_clarification", False):
-                        st.warning(f"⚠️ Clarification needed: {parsed.get('clarification_reason', 'Additional information required')}")
-                        st.session_state.hitl_required = True
-                        st.session_state.feedback = 'clarification'
-                        st.stop()
-                    
-                    # Store timeout value before thread (threads can't access session_state)
-                    request_timeout = st.session_state.request_timeout
-                    
-                    # Start async solve request in background
-                    import threading
-                    solve_complete = threading.Event()
-                    solve_response_data = {'response': None, 'error': None}
-                    
-                    def call_solve_api():
-                        try:
-                            response = requests.post(
-                                f"{API_BASE_URL}/api/solve",
-                                json={"problem": edited_text, "session_id": session_id},
-                                timeout=request_timeout,
-                                proxies={"http": None, "https": None}
-                            )
-                            solve_response_data['response'] = response
-                        except Exception as e:
-                            solve_response_data['error'] = e
-                        finally:
-                            solve_complete.set()
-                    
-                    # Start solve request in thread
-                    solve_thread = threading.Thread(target=call_solve_api)
-                    solve_thread.start()
-                    
-                    # Wait a moment for backend to initialize progress tracking
-                    time.sleep(0.3)
-                    
-                    # Show spinner with periodic updates using st.empty()
-                    progress_text = st.empty()
-                    detail_text = st.empty()
-                    time_text = st.empty()
-                    
-                    with st.spinner(""):
-                        last_step_num = 0
+                # Trigger solving
+                with st.spinner("🤖 AI agents are working on your problem..."):
+                    try:
+                        # Call backend parse API first
+                        parse_response = requests.post(
+                            f"{API_BASE_URL}/api/parse",
+                            json={"text": edited_text},
+                            proxies={"http": None, "https": None}
+                        )
                         
-                        # Poll for progress updates
-                        while not solve_complete.is_set():
-                            try:
-                                progress_response = requests.get(
-                                    f"{API_BASE_URL}/api/progress/{session_id}",
-                                    timeout=2,
-                                    proxies={"http": None, "https": None}
-                                )
-                                
-                                if progress_response.status_code == 200:
-                                    progress_data = progress_response.json()
-                                    current_step = progress_data.get('current_step', '')
-                                    step_num = progress_data.get('step_number', 0)
-                                    total_steps = progress_data.get('total_steps', 6)
-                                    details = progress_data.get('details', '')
-                                    
-                                    # Update displays using empty containers
-                                    progress_text.markdown(f"### 🤖 Step {step_num}/{total_steps}: {current_step}")
-                                    detail_text.info(f"💡 {details}")
-                                    
-                                    elapsed = int(time.time() - start_time)
-                                    time_text.caption(f"⏱️ Time elapsed: {elapsed}s")
-                                    
-                                    last_step_num = step_num
-                            
-                            except:
-                                pass  # Continue silently
-                            
-                            time.sleep(0.5)  # Poll every 500ms
-                    
-                    # Clear progress displays
-                    progress_text.empty()
-                    detail_text.empty()
-                    time_text.empty()
-                    
-                    # Wait for thread to complete
-                    solve_thread.join()
-                    
-                    # Check for errors
-                    if solve_response_data['error']:
-                        error = solve_response_data['error']
-                        st.error(f"❌ Error during solve: {type(error).__name__}: {str(error)}")
-                        raise error
-                    
-                    solve_response = solve_response_data['response']
-                    
-                    if solve_response is None:
-                        st.error("❌ No response received from backend")
-                        st.stop()
-                    
-                    elapsed_time = time.time() - start_time
-                    
-                    if solve_response.status_code != 200:
-                        st.error(f"Failed to solve problem: {solve_response.json().get('detail', 'Unknown error')}")
-                        st.stop()
-                    
-                    result = solve_response.json()
-                    
-                    # Store problem ID for feedback
-                    st.session_state.current_problem_id = result.get('problem_id', '')
-                    
-                    # Store agent trace
-                    st.session_state.agent_trace = result.get('agent_trace', [])
-                    
-                    # Extract solution details
-                    solution_data = result.get('solution', {})
-                    verification = result.get('verification', {})
-                    explanation = result.get('explanation', '')
-                    explanation_details = result.get('explanation_details', {})
-                    retrieved_context = result.get('retrieved_context', [])
-                    
-                    # Create solution object for display
-                    st.session_state.solution = {
-                        "problem": solution_data.get('problem', edited_text),
-                        "topic": solution_data.get('topic', 'General'),
-                        "final_answer": solution_data.get('final_answer', 'N/A'),
-                        "steps": [
+                        if parse_response.status_code != 200:
+                            st.error(f"Failed to parse problem: {parse_response.json().get('detail', 'Unknown error')}")
+                            st.stop()
+                        
+                        parsed = parse_response.json()
+                        
+                        # Use actual parsed data from LLM Parser Agent
+                        st.session_state.agent_trace = [
                             {
-                                "step_number": i + 1,
-                                "description": f"Step {i + 1}",
-                                "content": step if isinstance(step, str) else step.get('description', str(step))
+                                "agent": "Parser Agent",
+                                "status": "completed",
+                                "output": parsed,
+                                "timestamp": datetime.now().isoformat()
                             }
-                            for i, step in enumerate(solution_data.get('steps', []))
-                        ],
-                        "solution_text": solution_data.get('solution_text', ''),
-                        "retrieved_context": [
-                            {
-                                "source": ctx.get('source', 'Unknown'),
-                                "topic": ctx.get('topic', 'N/A'),
-                                "content": ctx.get('text', ''),
-                                "relevance": ctx.get('score', 0)
-                            }
-                            for ctx in retrieved_context
-                        ],
-                        "confidence": solution_data.get('confidence', 0.5),
-                        "verification_passed": verification.get('is_correct', False),
-                        "verification_confidence": verification.get('confidence', 0),
-                        "verification_issues": verification.get('issues', []),
-                        "verification_suggestions": verification.get('suggestions', []),
-                        "needs_human_review": verification.get('needs_human_review', False),
-                        "explanation": explanation,
-                        "key_concept": explanation_details.get('key_concept', ''),
-                        "analogy": explanation_details.get('analogy', ''),
-                        "common_mistakes": explanation_details.get('common_mistakes', '')
-                    }
+                        ]
+                        
+                        # Check if clarification is needed
+                        if parsed.get("needs_clarification", False):
+                            st.warning(f"⚠️ Clarification needed: {parsed.get('clarification_reason', 'Additional information required')}")
+                            st.session_state.hitl_required = True
+                            st.session_state.feedback = 'clarification'
+                            st.stop()
+                        
+                        # Call backend solve API with full RAG + Multi-Agent pipeline
+                        solve_response = requests.post(
+                            f"{API_BASE_URL}/api/solve",
+                            json={
+                                "problem": edited_text,
+                                "ocr_confidence": st.session_state.get('ocr_confidence'),
+                                "asr_confidence": st.session_state.get('asr_confidence')
+                            },
+                            timeout=st.session_state.request_timeout,  # Configurable timeout
+                            proxies={"http": None, "https": None}  # Disable proxy for localhost
+                        )
+                        
+                        if solve_response.status_code != 200:
+                            st.error(f"Failed to solve problem: {solve_response.json().get('detail', 'Unknown error')}")
+                            st.stop()
+                        
+                        result = solve_response.json()
+                        
+                        # Store problem ID for feedback
+                        problem_id = result.get('problem_id', '')
+                        st.session_state.current_problem_id = problem_id
+                        
+                        # Debug: Show if problem_id is missing
+                        if not problem_id:
+                            st.warning("⚠️ Backend didn't return a problem_id. Feedback may not work.")
+                        
+                        # Check if human review needed (HITL)
+                        if result.get('needs_human_review', False):
+                            st.session_state.hitl_required = True
+                            st.session_state.hitl_reason = result.get('hitl_reason', [])
+                            st.session_state.hitl_corrected_problem = edited_text
+                            
+                            # Store partial results for display
+                            st.session_state.solution = result.get('solution', {})
+                            st.session_state.agent_trace = result.get('agent_trace', [])
+                            st.session_state.verification = result.get('verification', {})
+                            
+                            st.warning("⚠️ Human review required. Please check the HITL panel below.")
+                            st.rerun()
+                        
+                        # Store agent trace
+                        st.session_state.agent_trace = result.get('agent_trace', [])
+                        
+                        # Extract solution details
+                        solution_data = result.get('solution', {})
+                        verification = result.get('verification', {})
+                        explanation = result.get('explanation', '')
+                        explanation_details = result.get('explanation_details', {})
+                        retrieved_context = result.get('retrieved_context', [])
+                        
+                        # Create solution object for display
+                        st.session_state.solution = {
+                            "problem": solution_data.get('problem', edited_text),
+                            "topic": solution_data.get('topic', 'General'),
+                            "final_answer": solution_data.get('final_answer', 'N/A'),
+                            "steps": [
+                                {
+                                    "step_number": i + 1,
+                                    "description": f"Step {i + 1}",
+                                    "content": step if isinstance(step, str) else step.get('description', str(step))
+                                }
+                                for i, step in enumerate(solution_data.get('steps', []))
+                            ],
+                            "solution_text": solution_data.get('solution_text', ''),
+                            "retrieved_context": [
+                                {
+                                    "source": ctx.get('source', 'Unknown'),
+                                    "topic": ctx.get('topic', 'N/A'),
+                                    "content": ctx.get('text', ''),
+                                    "relevance": ctx.get('score', 0)
+                                }
+                                for ctx in retrieved_context
+                            ],
+                            "confidence": solution_data.get('confidence', 0.5),
+                            "verification_passed": verification.get('is_correct', False),
+                            "verification_confidence": verification.get('confidence', 0),
+                            "verification_issues": verification.get('issues', []),
+                            "verification_suggestions": verification.get('suggestions', []),
+                            "needs_human_review": verification.get('needs_human_review', False),
+                            "explanation": explanation,
+                            "key_concept": explanation_details.get('key_concept', ''),
+                            "analogy": explanation_details.get('analogy', ''),
+                            "common_mistakes": explanation_details.get('common_mistakes', '')
+                        }
+                        
+                        st.session_state.feedback_submitted = False
                     
-                    st.session_state.feedback_submitted = False
-                
-                except requests.exceptions.Timeout:
-                    timeout_mins = st.session_state.request_timeout / 60
-                    st.error(f"❌ Request timed out after {timeout_mins:.0f} minutes. The LLM might be overloaded or the problem is very complex.")
-                    st.warning("""
-                    **Possible solutions:**
-                    - Try a simpler problem first to verify the system is working
-                    - Check if the backend LLM service (Ollama) is running and responsive
-                    - Restart the backend server if it's stuck
-                    - Increase the timeout in Advanced Settings (sidebar)
-                    - The problem might require multiple LLM calls - try breaking it into smaller parts
-                    """)
-                    st.info("🔧 You can check backend logs for more details")
-                    st.stop()
-                except requests.exceptions.ConnectionError as e:
-                    st.error(f"❌ Cannot connect to backend: {str(e)}")
-                    st.error("Make sure backend is running on http://localhost:8000")
-                    st.stop()
-                except requests.exceptions.RequestException as e:
-                    st.error(f"❌ Request failed: {str(e)}")
-                    st.stop()
-                except Exception as e:
-                    st.error(f"❌ Unexpected error: {type(e).__name__}: {str(e)}")
-                    st.stop()
+                    except requests.exceptions.Timeout:
+                        timeout_mins = st.session_state.request_timeout / 60
+                        st.error(f"❌ Request timed out after {timeout_mins:.0f} minutes. The LLM might be overloaded or the problem is very complex.")
+                        st.warning("""
+                        **Possible solutions:**
+                        - Try a simpler problem first to verify the system is working
+                        - Check if the backend LLM service (Ollama) is running and responsive
+                        - Restart the backend server if it's stuck
+                        - Increase the timeout in Advanced Settings (sidebar)
+                        - The problem might require multiple LLM calls - try breaking it into smaller parts
+                        """)
+                        st.info("🔧 You can check backend logs for more details")
+                        st.stop()
+                    except requests.exceptions.ConnectionError as e:
+                        st.error(f"❌ Cannot connect to backend: {str(e)}")
+                        st.error("Make sure backend is running on http://localhost:8000")
+                        st.stop()
+                    except requests.exceptions.RequestException as e:
+                        st.error(f"❌ Request failed: {str(e)}")
+                        st.stop()
+                    except Exception as e:
+                        st.error(f"❌ Unexpected error: {type(e).__name__}: {str(e)}")
+                        st.stop()
                 
                 st.success("✅ Solution generated!")
                 st.rerun()
@@ -624,6 +568,119 @@ else:
                 st.session_state.feedback_submitted = False
                 st.rerun()
     
+    # Display HITL Interface (Human-in-the-Loop)
+    if st.session_state.hitl_required:
+        st.markdown("---")
+        st.markdown("""
+        <div style='padding: 1.5rem; background: #fff3cd; border: 3px solid #ffc107; 
+                    border-radius: 12px; margin: 1rem 0;'>
+            <h2 style='color: #856404; margin-top: 0;'>✋ Human Review Required</h2>
+            <p style='color: #856404; font-size: 1.1rem; margin-bottom: 0;'>
+                The system needs your input to continue.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("### 📋 Reason(s) for Review:")
+        for reason in st.session_state.hitl_reason:
+            st.markdown(f"- **{reason}**")
+        
+        st.markdown("---")
+        
+        # Action 1: Edit problem text
+        st.markdown("### ✏️ Action 1: Edit Problem (if needed)")
+        corrected_problem = st.text_area(
+            "Review and correct the problem text:",
+            value=st.session_state.hitl_corrected_problem,
+            height=100,
+            key="hitl_problem_edit"
+        )
+        
+        # Action 2: Edit solution (if available)
+        if st.session_state.solution:
+            st.markdown("### 🔧 Action 2: Edit Solution (optional)")
+            
+            current_solution_steps = st.session_state.solution.get('steps', [])
+            solution_text = "\\n".join([f"Step {i+1}: {step}" for i, step in enumerate(current_solution_steps)])
+            
+            corrected_solution = st.text_area(
+                "Correct the solution if needed:",
+                value=solution_text,
+                height=150,
+                key="hitl_solution_edit"
+            )
+            st.session_state.hitl_corrected_solution = corrected_solution
+        
+        # Action 3: Approve / Reject buttons
+        st.markdown("### 🎯 Action 3: Approve or Reject")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("✅ Approve & Continue", type="primary", width="stretch", key="hitl_approve"):
+                st.success("✓ Approved! Continuing pipeline...")
+                
+                # If problem was corrected, re-solve with corrections
+                if corrected_problem != st.session_state.hitl_corrected_problem:
+                    with st.spinner("🔄 Re-solving with corrected problem..."):
+                        try:
+                            solve_response = requests.post(
+                                f"{API_BASE_URL}/api/solve",
+                                json={
+                                    "problem": corrected_problem,
+                                    "force_continue": True,  # Override HITL
+                                    "corrected_problem": corrected_problem
+                                },
+                                timeout=st.session_state.request_timeout,
+                                proxies={"http": None, "https": None}
+                            )
+                            
+                            if solve_response.status_code == 200:
+                                result = solve_response.json()
+                                st.session_state.solution = result.get('solution', {})
+                                st.session_state.agent_trace = result.get('agent_trace', [])
+                                st.session_state.current_problem_id = result.get('problem_id', '')
+                        except Exception as e:
+                            st.error(f"Failed to re-solve: {e}")
+                
+                # Reset HITL flags
+                st.session_state.hitl_required = False
+                st.session_state.hitl_reason = []
+                st.rerun()
+        
+        with col2:
+            if st.button("❌ Reject & Retry", width="stretch", key="hitl_reject"):
+                st.warning("⚠️ Rejected. Please modify the problem and try again.")
+                
+                # Store corrected problem back to extracted_text
+                st.session_state.extracted_text = corrected_problem
+                
+                # Reset pipeline
+                st.session_state.hitl_required = False
+                st.session_state.hitl_reason = []
+                st.session_state.solution = None
+                st.session_state.agent_trace = []
+                
+                # Increment problem counter to reset UI
+                st.session_state.problem_counter += 1
+                st.session_state.human_decision = None
+                
+                st.warning("⚠️ Rejected. Please modify and resubmit.")
+                st.rerun()
+        
+        # CRITICAL: Stop execution here until human makes a decision
+        st.stop()
+    
+    # Manual review request button (visible when solution exists)
+    if st.session_state.solution and not st.session_state.hitl_required:
+        col1, col2, col3 = st.columns([2, 1, 2])
+        with col2:
+            if st.button("🔍 Request Re-check", key="manual_review_btn"):
+                st.session_state.hitl_required = True
+                st.session_state.hitl_reason = ["User requested review"]
+                st.session_state.hitl_corrected_problem = st.session_state.extracted_text
+                st.rerun()
+    
     # Display agent trace
     if st.session_state.agent_trace:
         st.markdown("---")
@@ -637,9 +694,10 @@ else:
         
         render_solution_card(st.session_state.solution)
         
-        # Retrieved context panel
-        st.markdown("### 📚 Retrieved Knowledge")
-        render_retrieved_context(st.session_state.solution['retrieved_context'])
+        # Retrieved context panel (only if exists)
+        if st.session_state.solution.get('retrieved_context'):
+            st.markdown("### 📚 Retrieved Knowledge")
+            render_retrieved_context(st.session_state.solution['retrieved_context'])
         
         # Feedback section
         if not st.session_state.feedback_submitted:

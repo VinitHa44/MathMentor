@@ -78,11 +78,12 @@ class MemoryService:
             },
             "retrieved_context": [
                 {
-                    "source": ctx['source'],
-                    "topic": ctx['topic'],
-                    "score": ctx['score']
+                    "source": ctx.get('source', '') if isinstance(ctx, dict) else '',
+                    "topic": ctx.get('topic', '') if isinstance(ctx, dict) else '',
+                    "score": ctx.get('score', 0) if isinstance(ctx, dict) else 0
                 }
                 for ctx in retrieved_context
+                if isinstance(ctx, dict)
             ],
             "agent_trace": agent_trace,
             "feedback": None  # To be updated later
@@ -179,14 +180,17 @@ class MemoryService:
                     # Check topic match
                     if record.get('topic') == topic:
                         # Check variable similarity
-                        similarity = self._calculate_similarity(
-                            variables,
-                            record.get('variables', {})
-                        )
-                        
-                        if similarity > 0.5:  # Threshold
-                            record['similarity'] = similarity
-                            similar.append(record)
+                        record_vars = record.get('variables', {})
+                        # Ensure both are dicts before comparing
+                        if isinstance(variables, dict) and isinstance(record_vars, dict):
+                            similarity = self._calculate_similarity(
+                                variables,
+                                record_vars
+                            )
+                            
+                            if similarity > 0.5:  # Threshold
+                                record['similarity'] = similarity
+                                similar.append(record)
         
         # Sort by similarity and return top N
         similar.sort(key=lambda x: x.get('similarity', 0), reverse=True)
@@ -286,4 +290,123 @@ class MemoryService:
     def _save_patterns(self, patterns: Dict[str, Any]):
         """Save mistake patterns to file"""
         with open(self.patterns_file, 'w', encoding='utf-8') as f:
-            json.dump(patterns, f, indent=2, ensure_ascii=False)
+            json.dump(patterns, f, indent=2, ensure_ascii=False)    
+    def get_solution_patterns(self, topic: str) -> List[Dict[str, Any]]:
+        """
+        Retrieve known solution patterns for a topic
+        
+        Args:
+            topic: Problem topic
+        
+        Returns:
+            List of solution patterns with steps
+        """
+        patterns = []
+        
+        if not self.problems_file.exists():
+            return patterns
+        
+        with open(self.problems_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                if line.strip():
+                    record = json.loads(line)
+                    
+                    # Only use verified correct solutions
+                    if (record.get('topic') == topic and 
+                        record.get('verification', {}).get('is_correct', False)):
+                        patterns.append({
+                            'problem_text': record['problem_text'],
+                            'steps': record.get('solution', {}).get('steps', []),
+                            'final_answer': record.get('solution', {}).get('final_answer', ''),
+                            'confidence': record.get('verification', {}).get('confidence', 0)
+                        })
+        
+        # Return patterns sorted by confidence
+        patterns.sort(key=lambda x: x['confidence'], reverse=True)
+        return patterns[:5]  # Top 5 patterns
+    
+    def apply_known_corrections(self, text: str) -> str:
+        """
+        Apply known OCR/ASR corrections to input text
+        
+        Args:
+            text: Input text possibly containing errors
+        
+        Returns:
+            Corrected text
+        """
+        patterns = self._load_patterns()
+        
+        # Apply common corrections
+        corrections = patterns.get('ocr_corrections', {})
+        
+        corrected = text
+        for wrong, right in corrections.items():
+            corrected = corrected.replace(wrong, right)
+        
+        return corrected
+    
+    def store_ocr_correction(self, wrong_text: str, corrected_text: str):
+        """
+        Store OCR/ASR correction for future learning
+        
+        Args:
+            wrong_text: Original incorrect text
+            corrected_text: Human-corrected text
+        """
+        patterns = self._load_patterns()
+        
+        if 'ocr_corrections' not in patterns:
+            patterns['ocr_corrections'] = {}
+        
+        # Store word-level differences
+        wrong_words = wrong_text.split()
+        correct_words = corrected_text.split()
+        
+        for w, c in zip(wrong_words, correct_words):
+            if w != c:
+                patterns['ocr_corrections'][w] = c
+        
+        self._save_patterns(patterns)
+    
+    def search_by_structure(self, problem_structure: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Search memory by problem structure
+        
+        Args:
+            problem_structure: Structured problem data (counts, types, etc.)
+        
+        Returns:
+            List of similar problems
+        """
+        similar = []
+        
+        if not self.problems_file.exists():
+            return similar
+        
+        with open(self.problems_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                if line.strip():
+                    record = json.loads(line)
+                    
+                    # Compare structure
+                    record_structure = record.get('variables', {})
+                    
+                    # Check if structures match
+                    if self._structures_match(problem_structure, record_structure):
+                        similar.append(record)
+        
+        return similar
+    
+    def _structures_match(self, struct1: Dict, struct2: Dict) -> bool:
+        """Check if two problem structures match"""
+        # For probability problems with counts
+        if 'counts' in struct1 and 'counts' in struct2:
+            keys1 = set(struct1['counts'].keys())
+            keys2 = set(struct2['counts'].keys())
+            
+            # Same categories means similar structure
+            return keys1 == keys2
+        
+        # Generic key comparison
+        return set(struct1.keys()) == set(struct2.keys())

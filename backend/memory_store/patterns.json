@@ -1,1 +1,12 @@
-{}
+{
+  "Probability": {
+    "common_mistakes": [
+      {
+        "timestamp": "2025-12-18T01:30:33.988896",
+        "problem_snippet": "In a class of 30 students, 18 students play soccer and 12 students play basketball. If 8 students pl",
+        "user_comment": "jnkj"
+      }
+    ],
+    "correction_count": 1
+  }
+}

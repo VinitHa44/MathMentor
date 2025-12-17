@@ -206,76 +206,92 @@ def render_solution_card(solution: Dict[str, Any]):
     
     steps = solution.get('steps', [])
     
-    for step in steps:
-        step_num = step.get('step_number', 0)
-        description = step.get('description', '')
-        content = step.get('content', '')
-        
-        with st.expander(f"**Step {step_num}: {description}**", expanded=(step_num == 1)):
-            st.markdown(content)
+    for i, step in enumerate(steps, 1):
+        # Handle both string format and dict format
+        if isinstance(step, str):
+            step_content = step
+            with st.expander(f"**Step {i}**", expanded=(i == 1)):
+                st.markdown(step_content)
+        else:
+            step_num = step.get('step_number', i)
+            description = step.get('description', '')
+            content = step.get('content', '')
             
-            # Add visual separator
-            if step_num < len(steps):
-                st.markdown("---")
+            with st.expander(f"**Step {step_num}: {description}**", expanded=(step_num == 1)):
+                st.markdown(content)
+        
+        # Add visual separator
+        if i < len(steps):
+            st.markdown("---")
 
 
 def render_feedback_section():
     """
     Render the feedback and HITL section with backend integration
     """
+    import streamlit as st
+    import requests
+    
     st.markdown("### 💬 Feedback")
     st.markdown("Help us improve by providing feedback:")
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("✅ Approve", key="feedback_approve_btn", type="primary"):
+        if st.button("✅ Approve", key="feedback_approve_btn", type="primary", use_container_width=True):
             problem_id = st.session_state.get('current_problem_id', '')
             
             if problem_id:
                 try:
-                    import requests
                     response = requests.post(
                         "http://localhost:8000/api/feedback",
                         json={
                             "problem_id": problem_id,
                             "feedback_type": "approve",
                             "user_comment": "Solution approved"
-                        }
+                        },
+                        timeout=5
                     )
                     
                     if response.status_code == 200:
-                        st.success("✅ Thank you! Feedback saved.")
                         st.session_state.feedback_submitted = True
+                        st.success("✅ Thank you! Feedback saved.")
                         st.balloons()
+                        st.rerun()
                 except Exception as e:
                     st.error(f"Failed to submit feedback: {e}")
+            else:
+                st.warning("No problem ID found. Solve a problem first.")
     
     with col2:
-        if st.button("✏️ Edit/Correct", key="feedback_edit_btn"):
+        if st.button("✏️ Edit/Correct", key="feedback_edit_btn", use_container_width=True):
             st.session_state.show_correction_form = True
+            st.rerun()
     
     with col3:
-        if st.button("❌ Reject", key="feedback_reject_btn"):
+        if st.button("❌ Reject", key="feedback_reject_btn", use_container_width=True):
             problem_id = st.session_state.get('current_problem_id', '')
             
             if problem_id:
                 try:
-                    import requests
                     response = requests.post(
                         "http://localhost:8000/api/feedback",
                         json={
                             "problem_id": problem_id,
                             "feedback_type": "reject",
                             "user_comment": "Solution rejected"
-                        }
+                        },
+                        timeout=5
                     )
                     
                     if response.status_code == 200:
-                        st.warning("⚠️ Feedback recorded. We'll learn from this.")
                         st.session_state.feedback_submitted = True
+                        st.warning("⚠️ Feedback recorded. We'll learn from this.")
+                        st.rerun()
                 except Exception as e:
                     st.error(f"Failed to submit feedback: {e}")
+            else:
+                st.warning("No problem ID found. Solve a problem first.")
     
     # Correction form
     if st.session_state.get('show_correction_form', False):
@@ -284,12 +300,19 @@ def render_feedback_section():
             user_comment = st.text_area("What's wrong with this solution?", key="correction_comment")
             corrected_solution = st.text_area("Your corrected solution (optional):", key="correction_solution")
             
-            if st.form_submit_button("Submit Correction"):
+            col_submit, col_cancel = st.columns(2)
+            
+            with col_submit:
+                submitted = st.form_submit_button("Submit Correction", type="primary", use_container_width=True)
+            
+            with col_cancel:
+                cancelled = st.form_submit_button("Cancel", use_container_width=True)
+            
+            if submitted:
                 problem_id = st.session_state.get('current_problem_id', '')
                 
-                if problem_id:
+                if problem_id and user_comment:
                     try:
-                        import requests
                         response = requests.post(
                             "http://localhost:8000/api/feedback",
                             json={
@@ -297,21 +320,23 @@ def render_feedback_section():
                                 "feedback_type": "edit",
                                 "user_comment": user_comment,
                                 "corrected_solution": corrected_solution
-                            }
+                            },
+                            timeout=5
                         )
                         
                         if response.status_code == 200:
-                            st.success("✅ Thank you! Your correction helps us learn.")
                             st.session_state.show_correction_form = False
                             st.session_state.feedback_submitted = True
+                            st.success("✅ Thank you! Your correction helps us learn.")
+                            st.rerun()
                     except Exception as e:
                         st.error(f"Failed to submit correction: {e}")
-    
-    with col3:
-        if st.button("🤔 Need Clarification", width='stretch'):
-            st.session_state.hitl_required = True
-            st.session_state.feedback = 'clarification'
-            st.rerun()
+                else:
+                    st.error("Please provide a comment explaining what's wrong.")
+            
+            if cancelled:
+                st.session_state.show_correction_form = False
+                st.rerun()
 
 
 def render_hitl_interface():
