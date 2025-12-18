@@ -67,19 +67,24 @@ Your goal: Help students understand the concept quickly and clearly."""
 **Your Task:**
 Provide a concise explanation with these sections:
 
-1. **Key Concept** (2-3 sentences): What mathematical principle is used?
+1. Key Concept (2-3 sentences): What mathematical principle is used?
 
-2. **Why This Approach** (2-3 sentences): Why is this the right method?
+2. Why This Approach (2-3 sentences): Why is this the right method?
 
-3. **Step Explanation** (brief): Reference the solver steps above and explain any non-obvious parts.
+3. Step Explanation (brief): Reference the solver steps and explain key parts.
 
-4. **Common Mistakes** (2-3 points): What errors do students typically make?
+4. Common Mistakes (2-3 points): What errors do students typically make?
 
-5. **Quick Tip** (1 sentence): One useful insight for similar problems.
+5. Quick Tip (1 sentence): One useful insight for similar problems.
 
-**CRITICAL**: Do NOT mention "with/without replacement" unless explicitly stated in the problem. For single-draw problems, replacement is irrelevant.
+**IMPORTANT:**
+- Write in plain text, not markdown format
+- Do NOT use ** for bold or other markdown
+- Do NOT mention "with/without replacement" unless explicitly in problem
+- Keep LaTeX minimal - use simple fractions like 4/13 instead of \\frac
+- Be concise and direct
 
-Keep it professional and focused:"""
+Provide explanation:"""
 
         # Generate explanation
         try:

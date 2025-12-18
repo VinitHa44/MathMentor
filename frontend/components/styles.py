@@ -189,17 +189,6 @@ def apply_custom_styles():
         color: #721c24;
     }
     
-    /* Sidebar */
-    [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #f8f9fa 0%, #e9ecef 100%);
-        padding: 2rem 1rem;
-    }
-    
-    [data-testid="stSidebar"] .stButton > button {
-        width: 100%;
-        margin: 0.25rem 0;
-    }
-    
     /* Multiselect */
     .stMultiSelect > div > div {
         border-radius: 8px;

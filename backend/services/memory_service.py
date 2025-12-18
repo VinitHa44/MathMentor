@@ -19,12 +19,19 @@ class MemoryService:
             storage_dir: Directory to store memory files
         """
         self.storage_dir = Path(storage_dir)
-        self.storage_dir.mkdir(exist_ok=True)
         
         # Storage files
         self.problems_file = self.storage_dir / "problems.jsonl"
         self.feedback_file = self.storage_dir / "feedback.jsonl"
         self.patterns_file = self.storage_dir / "patterns.json"
+        
+        # Initialize storage
+        self._ensure_storage_exists()
+    
+    def _ensure_storage_exists(self):
+        """Ensure storage directory and files exist"""
+        # Create directory if it doesn't exist
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
         
         # Ensure files exist
         for file in [self.problems_file, self.feedback_file]:
@@ -57,6 +64,9 @@ class MemoryService:
         Returns:
             Problem ID
         """
+        # Ensure storage exists before writing
+        self._ensure_storage_exists()
+        
         problem_id = self._generate_id()
         
         record = {
@@ -111,6 +121,9 @@ class MemoryService:
             user_comment: Optional user comment
             corrected_solution: Optional corrected solution
         """
+        # Ensure storage exists before writing
+        self._ensure_storage_exists()
+        
         feedback_record = {
             "problem_id": problem_id,
             "timestamp": datetime.now().isoformat(),
@@ -137,6 +150,9 @@ class MemoryService:
         Returns:
             List of problem records
         """
+        # Ensure storage exists
+        self._ensure_storage_exists()
+        
         problems = []
         
         if not self.problems_file.exists():
@@ -167,6 +183,9 @@ class MemoryService:
         Returns:
             List of similar problem records
         """
+        # Ensure storage exists
+        self._ensure_storage_exists()
+        
         similar = []
         
         if not self.problems_file.exists():
@@ -293,37 +312,68 @@ class MemoryService:
             json.dump(patterns, f, indent=2, ensure_ascii=False)    
     def get_solution_patterns(self, topic: str) -> List[Dict[str, Any]]:
         """
-        Retrieve known solution patterns for a topic
+        Retrieve known solution patterns for a topic, including user corrections
         
         Args:
             topic: Problem topic
         
         Returns:
-            List of solution patterns with steps
+            List of solution patterns with steps (prioritizing user corrections)
         """
         patterns = []
         
-        if not self.problems_file.exists():
-            return patterns
+        # FIRST: Get user corrections from patterns.json (highest priority!)
+        correction_patterns = self._load_patterns()
+        if topic in correction_patterns:
+            topic_corrections = correction_patterns[topic].get('common_mistakes', [])
+            for correction in topic_corrections:
+                # Parse user comment to extract steps and answer
+                user_comment = correction.get('user_comment', '')
+                if user_comment:
+                    patterns.append({
+                        'problem_text': correction.get('problem_snippet', ''),
+                        'problem_snippet': correction.get('problem_snippet', ''),
+                        'steps': user_comment.split('\n'),  # User's corrected steps
+                        'final_answer': self._extract_answer_from_comment(user_comment),
+                        'confidence': 1.0,  # User corrections are highest confidence
+                        'source': 'user_correction'
+                    })
         
-        with open(self.problems_file, 'r', encoding='utf-8') as f:
-            for line in f:
-                if line.strip():
-                    record = json.loads(line)
-                    
-                    # Only use verified correct solutions
-                    if (record.get('topic') == topic and 
-                        record.get('verification', {}).get('is_correct', False)):
-                        patterns.append({
-                            'problem_text': record['problem_text'],
-                            'steps': record.get('solution', {}).get('steps', []),
-                            'final_answer': record.get('solution', {}).get('final_answer', ''),
-                            'confidence': record.get('verification', {}).get('confidence', 0)
-                        })
+        # SECOND: Get verified solutions from problems.jsonl
+        if self.problems_file.exists():
+            with open(self.problems_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    if line.strip():
+                        record = json.loads(line)
+                        
+                        # Only use verified correct solutions
+                        if (record.get('topic') == topic and 
+                            record.get('verification', {}).get('is_correct', False)):
+                            patterns.append({
+                                'problem_text': record['problem_text'],
+                                'steps': record.get('solution', {}).get('steps', []),
+                                'final_answer': record.get('solution', {}).get('final_answer', ''),
+                                'confidence': record.get('verification', {}).get('confidence', 0),
+                                'source': 'verified_solution'
+                            })
         
-        # Return patterns sorted by confidence
+        # Sort: user corrections first (confidence=1.0), then by confidence
         patterns.sort(key=lambda x: x['confidence'], reverse=True)
         return patterns[:5]  # Top 5 patterns
+    
+    def _extract_answer_from_comment(self, comment: str) -> str:
+        """Extract final answer from user comment"""
+        import re
+        # Look for "Answer:" pattern
+        match = re.search(r'\*\*Answer:\*\*\s*([^\n]+)', comment)
+        if match:
+            return match.group(1).strip()
+        # Look for last line with a number
+        lines = [l.strip() for l in comment.split('\n') if l.strip()]
+        for line in reversed(lines):
+            if re.search(r'\d+\.?\d*', line):
+                return line
+        return 'See correction'
     
     def apply_known_corrections(self, text: str) -> str:
         """

@@ -2,11 +2,16 @@
   "Probability": {
     "common_mistakes": [
       {
-        "timestamp": "2025-12-18T01:30:33.988896",
-        "problem_snippet": "In a class of 30 students, 18 students play soccer and 12 students play basketball. If 8 students pl",
-        "user_comment": "jnkj"
+        "timestamp": "2025-12-19T00:34:34.225382",
+        "problem_snippet": "Two dice rolled_ Find probability that sum is 7",
+        "user_comment": "Favorable: (1,6), (2,5), (3,4), (4,3), (5,2), (6,1) = 6 outcomes\nTotal: 36\n\nP(sum = 7) = 6/36 = 1/6"
+      },
+      {
+        "timestamp": "2025-12-19T00:44:40.395072",
+        "problem_snippet": "#*Question:** Probability of hitting target is 0.3 Find probability of missing at least once in 3 sh",
+        "user_comment": "P(miss at least once) = 1 - P(hit all three)\n= 1 - (0.3)³\n= 1 - 0.027 = 0.973\n\n**Answer:** 0.973"
       }
     ],
-    "correction_count": 1
+    "correction_count": 2
   }
 }

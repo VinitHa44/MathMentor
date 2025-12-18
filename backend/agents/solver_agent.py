@@ -42,11 +42,14 @@ class SolverAgent:
         Returns:
             Solution with steps, answer, and metadata
         """
-        # Use strict format for simple probability
+        # Try strict format for simple probability, fallback to LLM if it fails
         if topic.lower() == "probability" and self._is_simple_probability(problem_text):
-            return self._solve_simple_probability(problem_text)
+            simple_result = self._solve_simple_probability(problem_text)
+            if simple_result.get('success', False):
+                return simple_result
+            # If pattern matching fails, continue to LLM solver
         
-        # Use LLM for complex problems
+        # Use LLM for complex problems or when pattern matching fails
         return self._solve_with_llm(problem_text, topic, variables, constraints, 
                                    retrieved_context, similar_problems, solution_patterns)
     
@@ -173,40 +176,36 @@ class SolverAgent:
         memory_text = self._format_memory_patterns(solution_patterns, similar_problems)
         
         # Build solver prompt
-        system_prompt = """You are an expert math tutor solving JEE-level problems.
+        system_prompt = """You are a precise math tutor. Follow the provided context and examples EXACTLY.
 
 CRITICAL RULES:
-1. Use ONLY the retrieved context below for formulas and methods
-2. Reference known solution patterns when applicable
-3. Show step-by-step working clearly
-4. Explain your reasoning at each step
-5. If context is insufficient, say so clearly
-6. Verify domain constraints (e.g., x > 0 for √x)
-7. Format math using LaTeX where needed
+1. If the problem matches an example in the context, USE THAT EXACT SOLUTION METHOD
+2. Copy formulas and steps from the context - do NOT modify the approach
+3. If user corrections are provided, those are the CORRECT solutions - follow them exactly
+4. Be brief and show calculations clearly
+5. Use simple notation (e.g., 4/13 instead of LaTeX)
 
-Your solution must be structured and easy to follow."""
+NEVER invent your own approach when the context shows the correct method."""
 
-        user_prompt = f"""Solve this math problem:
-
-**Problem:** {problem_text}
+        user_prompt = f"""**Problem:** {problem_text}
 
 **Topic:** {topic}
 
-**Given Variables:** {variables}
-
-**Constraints:** {constraints}
-
-**Retrieved Context:**
+**Retrieved Context with Correct Solutions:**
 {context_text}
 {memory_text}
-**Instructions:**
-- Use the context to identify relevant formulas/methods
-- Apply known solution patterns if applicable
-- Show all steps clearly
-- State your final answer
-- If you need more information, say so
+**IMPORTANT:**
+- If this problem matches an example above, use EXACTLY that method
+- The context examples show the CORRECT approach - follow them precisely
+- User corrections in memory are verified correct solutions
 
-Provide your solution:"""
+**Your Task:**
+1. Find the matching example/pattern in context
+2. Apply the EXACT same steps with your problem's numbers
+3. Show your calculation
+4. State: Final Answer: [number]
+
+Solve:"""
 
         # Generate solution
         try:
@@ -287,70 +286,125 @@ Provide your solution:"""
         
         formatted = []
         
-        # Add solution patterns
+        # Add solution patterns from user corrections - THESE ARE CORRECT!
         if solution_patterns:
-            formatted.append("\n**Known Solution Patterns (From Past Correct Solutions):**")
-            for i, pattern in enumerate(solution_patterns[:2], 1):  # Top 2 patterns
+            formatted.append("\n**USER-CORRECTED SOLUTIONS (Verified Correct - Use These!):**")
+            for i, pattern in enumerate(solution_patterns[:3], 1):  # Top 3 patterns
                 steps = pattern.get('steps', [])
+                problem_snippet = pattern.get('problem_snippet', 'N/A')
+                formatted.append(f"\nCorrected Solution {i}:")
+                formatted.append(f"Problem: {problem_snippet}")
                 if steps:
-                    formatted.append(f"\nPattern {i}:")
-                    for j, step in enumerate(steps[:3], 1):  # First 3 steps
+                    for j, step in enumerate(steps[:5], 1):  # Show more steps
                         step_text = step if isinstance(step, str) else str(step)
-                        formatted.append(f"  {j}. {step_text}")
-                    formatted.append(f"  → Answer: {pattern.get('final_answer', 'N/A')}")
+                        formatted.append(f"  Step {j}: {step_text}")
+                formatted.append(f"  **Final Answer: {pattern.get('final_answer', 'N/A')}**")
+                formatted.append("")
         
         # Add similar problems reference
         if similar_problems:
             formatted.append(f"\n**Similar Problems Found:** {len(similar_problems)} similar problems in memory")
-            formatted.append("Use similar approaches if applicable.\n")
+            formatted.append("Use similar approaches.\n")
         
         return "\n".join(formatted) if formatted else ""
     
     def _extract_steps(self, solution_text: str) -> List[str]:
         """Extract solution steps from text"""
-        # Simple extraction - look for numbered steps or lines
+        import re
+        
         lines = solution_text.split('\n')
         steps = []
         
         for line in lines:
             line = line.strip()
-            if line and (
-                line.startswith(('Step', 'step', '1.', '2.', '3.', '4.', '5.', '-', '•'))
-                or ':' in line
-            ):
+            if not line:
+                continue
+            
+            # Remove duplicate step prefixes like "Step 1: Step 1"
+            line = re.sub(r'^(Step\s+\d+:)\s*\1', r'\1', line, flags=re.IGNORECASE)
+            
+            # Clean up LaTeX issues
+            line = re.sub(r'\\endterm:', '', line)  # Remove \endterm:
+            line = re.sub(r'\\frac\{(\d+)\}\{(\d+)\}', r'\1/\2', line)  # Convert \frac to simple fractions
+            
+            # Only add lines that look like steps or have content
+            if line and any([
+                line.lower().startswith('step'),
+                re.match(r'^\d+\.', line),
+                ':' in line and len(line) > 10,
+                'formula' in line.lower(),
+                'calculate' in line.lower(),
+                '=' in line
+            ]):
                 steps.append(line)
         
-        return steps if steps else [solution_text]
+        # If no steps found, return the whole text as one step
+        if not steps:
+            return [solution_text]
+        
+        return steps
     
     def _extract_final_answer(self, solution_text: str) -> str:
         """Extract final answer from solution"""
-        # Look for common answer patterns
-        lower_text = solution_text.lower()
+        import re
         
+        # Clean up common LaTeX issues first
+        solution_text = re.sub(r'\\endterm:', '', solution_text)
+        solution_text = re.sub(r'\\frac\{(\d+)\}\{(\d+)\}', r'\1/\2', solution_text)
+        
+        # Look for boxed answers first (most explicit)
+        boxed_match = re.search(r'\\boxed\{([^}]+)\}', solution_text)
+        if boxed_match:
+            answer = boxed_match.group(1).strip()
+            # Convert LaTeX fractions in boxed answer
+            answer = re.sub(r'\\frac\{(\d+)\}\{(\d+)\}', r'\1/\2', answer)
+            return answer
+        
+        # Look for "Final Answer: X" or "Answer: X" with simple fraction
+        answer_match = re.search(r'(?:Final\s+)?Answer[:\s]+(\d+/\d+|\d+\.?\d*)', solution_text, re.IGNORECASE)
+        if answer_match:
+            return answer_match.group(1).strip()
+        
+        # Look for fractions or numbers after "= " at the end
+        equals_matches = re.findall(r'=\s*(\d+/\d+|\d+\.?\d*)', solution_text)
+        if equals_matches:
+            return equals_matches[-1].strip()
+        
+        # Look for standalone fractions near the end
+        fraction_matches = re.findall(r'\b(\d+/\d+)\b', solution_text)
+        if fraction_matches:
+            return fraction_matches[-1]
+        
+        # Look for common conclusion patterns
+        lower_text = solution_text.lower()
         answer_markers = [
-            "final answer:",
-            "answer:",
-            "therefore,",
-            "thus,",
-            "hence,",
-            "result:"
+            ("final answer:", 50),
+            ("answer:", 50),
+            ("therefore", 80),
         ]
         
-        for marker in answer_markers:
+        for marker, max_len in answer_markers:
             if marker in lower_text:
-                # Get text after marker
                 idx = lower_text.find(marker)
                 after_marker = solution_text[idx + len(marker):].strip()
                 
-                # Get first sentence/line
-                end_idx = after_marker.find('\n')
-                if end_idx == -1:
-                    end_idx = len(after_marker)
+                # Extract up to max_len characters or first newline
+                end_idx = min(len(after_marker), max_len)
+                newline_idx = after_marker.find('\n')
+                if newline_idx != -1 and newline_idx < end_idx:
+                    end_idx = newline_idx
                 
                 answer = after_marker[:end_idx].strip()
-                if answer:
+                # Clean up
+                answer = re.sub(r'^(the\s+)?(answer\s+is\s+)?', '', answer, flags=re.IGNORECASE)
+                answer = re.sub(r'\s+', ' ', answer)  # Collapse whitespace
+                if answer and len(answer) < 100:
                     return answer
         
-        # Fallback: last non-empty line
+        # Fallback: last line with a number or fraction
         lines = [l.strip() for l in solution_text.split('\n') if l.strip()]
+        for line in reversed(lines[-3:]):
+            if re.search(r'\d+/\d+|=\s*\d+', line) and len(line) < 100:
+                return line
+        
         return lines[-1] if lines else "See solution above"

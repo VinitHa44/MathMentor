@@ -201,28 +201,29 @@ def render_solution_card(solution: Dict[str, Any]):
     </div>
     """, unsafe_allow_html=True)
     
-    # Step-by-step solution
+    # Step-by-step solution in one dropdown
     st.markdown("### 📖 Step-by-Step Solution")
     
     steps = solution.get('steps', [])
     
-    for i, step in enumerate(steps, 1):
-        # Handle both string format and dict format
-        if isinstance(step, str):
-            step_content = step
-            with st.expander(f"**Step {i}**", expanded=(i == 1)):
+    with st.expander("**View All Steps**", expanded=False):
+        for i, step in enumerate(steps, 1):
+            # Handle both string format and dict format
+            if isinstance(step, str):
+                step_content = step
+                st.markdown(f"**Step {i}:**")
                 st.markdown(step_content)
-        else:
-            step_num = step.get('step_number', i)
-            description = step.get('description', '')
-            content = step.get('content', '')
-            
-            with st.expander(f"**Step {step_num}: {description}**", expanded=(step_num == 1)):
+            else:
+                step_num = step.get('step_number', i)
+                description = step.get('description', '')
+                content = step.get('content', '')
+                
+                st.markdown(f"**Step {step_num}: {description}**")
                 st.markdown(content)
-        
-        # Add visual separator
-        if i < len(steps):
-            st.markdown("---")
+            
+            # Add visual separator between steps
+            if i < len(steps):
+                st.markdown("---")
 
 
 def render_feedback_section():

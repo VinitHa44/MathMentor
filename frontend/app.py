@@ -43,7 +43,7 @@ st.set_page_config(
     page_title="Math Mentor - AI Math Tutor",
     page_icon="🧮",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 # Apply custom styling
@@ -84,6 +84,8 @@ def initialize_session_state():
         st.session_state.current_problem_id = None
     if 'show_correction_form' not in st.session_state:
         st.session_state.show_correction_form = False
+    if 'needs_review' not in st.session_state:
+        st.session_state.needs_review = False  # Flag for OCR/ASR text that needs review
 
 initialize_session_state()
 
@@ -103,54 +105,6 @@ def render_header():
         """, unsafe_allow_html=True)
 
 render_header()
-
-# Sidebar
-with st.sidebar:
-    st.markdown("### ⚙️ Settings")
-    
-    # Advanced settings expander
-    with st.expander("🕐 Timeout Configuration"):
-        timeout_minutes = st.slider(
-            "Request Timeout (minutes)",
-            min_value=1,
-            max_value=20,
-            value=10,
-            help="Maximum time to wait for LLM response. Increase for complex problems."
-        )
-        st.session_state.request_timeout = timeout_minutes * 60
-    
-    st.markdown("---")
-    
-    # Memory toggle
-    if st.button("📚 View Memory & History", use_container_width=True):
-        st.session_state.show_memory = not st.session_state.show_memory
-    
-    # Stats
-    st.markdown("### 📊 Session Stats")
-    st.metric("Problems Solved", len(st.session_state.history))
-    if st.session_state.history:
-        correct_count = sum(1 for h in st.session_state.history if h.get('feedback') == 'correct')
-        accuracy = (correct_count / len(st.session_state.history)) * 100
-        st.metric("Accuracy", f"{accuracy:.1f}%")
-    
-    st.markdown("---")
-    
-    # About section
-    with st.expander("ℹ️ About"):
-        st.markdown("""
-        **Math Mentor** uses:
-        - 🔍 RAG for knowledge retrieval
-        - 🤖 Multi-agent system
-        - 👁️ OCR for images
-        - 🎤 Speech-to-text
-        - 🧠 Self-learning memory
-        - ✋ Human-in-the-loop
-        """)
-    
-    if st.button("🔄 Reset Session", use_container_width=True):
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
-        st.rerun()
 
 # Main content area
 if st.session_state.show_memory:
@@ -209,6 +163,7 @@ else:
                                 result = response.json()
                                 st.session_state.extracted_text = result["text"]
                                 st.session_state.ocr_confidence = result["confidence"]
+                                st.session_state.needs_review = True  # OCR text needs review
                                 # Increment problem counter to force text area refresh
                                 st.session_state.problem_counter += 1
                                 # Clear previous solution and agent trace
@@ -291,6 +246,7 @@ else:
                                     result = response.json()
                                     st.session_state.extracted_text = result["text"]
                                     st.session_state.asr_confidence = result["confidence"]
+                                    st.session_state.needs_review = True  # ASR text needs review
                                     # Increment problem counter to force text area refresh
                                     st.session_state.problem_counter += 1
                                     # Clear previous solution and agent trace
@@ -340,6 +296,7 @@ else:
                                 result = response.json()
                                 st.session_state.extracted_text = result["text"]
                                 st.session_state.asr_confidence = result["confidence"]
+                                st.session_state.needs_review = True  # ASR text needs review
                                 # Increment problem counter to force text area refresh
                                 st.session_state.problem_counter += 1
                                 # Clear previous solution and agent trace
@@ -375,25 +332,149 @@ else:
         
         if st.button("➡️ Submit Problem", type="primary", width='stretch'):
             if text_input.strip():
-                st.session_state.extracted_text = text_input
-                # Increment problem counter to force text area refresh
-                st.session_state.problem_counter += 1
-                # Clear OCR/ASR confidence flags since this is manual text input
-                if hasattr(st.session_state, 'ocr_confidence'):
-                    delattr(st.session_state, 'ocr_confidence')
-                if hasattr(st.session_state, 'asr_confidence'):
-                    delattr(st.session_state, 'asr_confidence')
-                # Clear previous solution and agent trace
+                # Clear old solution and HITL state before solving new problem
                 st.session_state.solution = None
                 st.session_state.agent_trace = []
+                st.session_state.hitl_required = False
+                st.session_state.hitl_reason = []
                 st.session_state.feedback_submitted = False
-                st.success("✅ Problem submitted!")
+                
+                # For text input, solve directly without requiring "Confirm & Solve"
+                try:
+                    # Call backend parse API first
+                    with st.spinner("🔍 Parsing your problem..."):
+                        parse_response = requests.post(
+                            f"{API_BASE_URL}/api/parse",
+                            json={"text": text_input},
+                            proxies={"http": None, "https": None}
+                        )
+                        
+                        if parse_response.status_code != 200:
+                            st.error(f"Failed to parse problem: {parse_response.json().get('detail', 'Unknown error')}")
+                            st.stop()
+                        
+                        parsed = parse_response.json()
+                        
+                        # Use actual parsed data from LLM Parser Agent
+                        st.session_state.agent_trace = [
+                            {
+                                "agent": "Parser Agent",
+                                "status": "completed",
+                                "output": parsed,
+                                "timestamp": datetime.now().isoformat()
+                            }
+                        ]
+                    
+                    # Check if clarification is needed (outside spinner context)
+                    if parsed.get("needs_clarification", False):
+                        st.warning(f"⚠️ Clarification needed: {parsed.get('clarification_reason', 'Additional information required')}")
+                        st.info("💡 Please clarify the problem and try again.")
+                        st.session_state.extracted_text = text_input
+                        st.session_state.problem_counter += 1
+                        st.stop()
+                    
+                    # Continue with solving
+                    with st.spinner("🤖 AI agents are working on your problem..."):
+                        solve_response = requests.post(
+                            f"{API_BASE_URL}/api/solve",
+                            json={
+                                "problem": text_input,
+                                "ocr_confidence": None,
+                                "asr_confidence": None
+                            },
+                            timeout=st.session_state.request_timeout,
+                            proxies={"http": None, "https": None}
+                        )
+                        
+                        if solve_response.status_code != 200:
+                            st.error(f"Failed to solve problem: {solve_response.json().get('detail', 'Unknown error')}")
+                            st.stop()
+                        
+                        result = solve_response.json()
+                        
+                        # Store problem ID for feedback
+                        st.session_state.current_problem_id = result.get('problem_id', '')
+                        
+                        # Check if human review needed (HITL)
+                        if result.get('needs_human_review', False):
+                            st.session_state.hitl_required = True
+                            st.session_state.hitl_reason = result.get('hitl_reason', [])
+                            st.session_state.hitl_corrected_problem = text_input
+                            
+                            # Store partial results only if valid and from current problem
+                            solution_from_backend = result.get('solution', {})
+                            if solution_from_backend and solution_from_backend.get('steps'):
+                                # Tag solution with current problem for validation
+                                solution_from_backend['_current_problem'] = text_input
+                                st.session_state.solution = solution_from_backend
+                            else:
+                                st.session_state.solution = None
+                                
+                            st.session_state.agent_trace = result.get('agent_trace', [])
+                            st.session_state.verification = result.get('verification', {})
+                            st.warning("⚠️ Human review required. Please check the HITL panel below.")
+                            st.rerun()
+                        
+                        # Store results
+                        st.session_state.extracted_text = text_input
+                        st.session_state.needs_review = False  # Direct text input doesn't need review
+                        st.session_state.agent_trace = result.get('agent_trace', [])
+                        solution_data = result.get('solution', {})
+                        verification = result.get('verification', {})
+                        explanation = result.get('explanation', '')
+                        explanation_details = result.get('explanation_details', {})
+                        retrieved_context = result.get('retrieved_context', [])
+                        
+                        # Create solution object for display
+                        st.session_state.solution = {
+                            "problem": solution_data.get('problem', text_input),
+                            "topic": solution_data.get('topic', 'General'),
+                            "final_answer": solution_data.get('final_answer', 'N/A'),
+                            "steps": [
+                                {
+                                    "step_number": i + 1,
+                                    "description": f"Step {i + 1}",
+                                    "content": step if isinstance(step, str) else step.get('description', str(step))
+                                }
+                                for i, step in enumerate(solution_data.get('steps', []))
+                            ],
+                            "solution_text": solution_data.get('solution_text', ''),
+                            "retrieved_context": [
+                                {
+                                    "source": ctx.get('source', 'Unknown'),
+                                    "content": ctx.get('content', '')
+                                }
+                                for ctx in retrieved_context
+                            ],
+                            "verification": verification,
+                            "explanation": explanation,
+                            "concept": explanation_details.get('concept', ''),
+                            "approach": explanation_details.get('approach', ''),
+                            "key_insight": explanation_details.get('key_insight', ''),
+                            "common_mistakes": explanation_details.get('common_mistakes', '')
+                        }
+                        
+                        st.session_state.feedback_submitted = False
+                        st.session_state.problem_counter += 1
+                
+                except requests.exceptions.Timeout:
+                    timeout_mins = st.session_state.request_timeout / 60
+                    st.error(f"❌ Request timed out after {timeout_mins:.0f} minutes.")
+                    st.stop()
+                except requests.exceptions.ConnectionError as e:
+                    st.error(f"❌ Cannot connect to backend: {str(e)}")
+                    st.stop()
+                except Exception as e:
+                    st.error(f"❌ Unexpected error: {type(e).__name__}: {str(e)}")
+                    st.stop()
+                
+                st.success("✅ Solution generated!")
                 st.rerun()
             else:
                 st.error("Please enter a math problem")
     
-    # Extracted text preview and editing
-    if st.session_state.extracted_text:
+    # Extracted text preview and editing (only for OCR/ASR, not direct text input)
+    if st.session_state.extracted_text and st.session_state.needs_review:
         st.markdown("---")
         st.markdown("## 📄 Extracted Problem")
         
@@ -426,10 +507,17 @@ else:
             if st.button("✅ Confirm & Solve", type="primary", width='stretch'):
                 st.session_state.extracted_text = edited_text
                 
+                # Clear old solution and HITL state before solving new problem
+                st.session_state.solution = None
+                st.session_state.agent_trace = []
+                st.session_state.hitl_required = False
+                st.session_state.hitl_reason = []
+                st.session_state.feedback_submitted = False
+                
                 # Trigger solving
-                with st.spinner("🤖 AI agents are working on your problem..."):
-                    try:
-                        # Call backend parse API first
+                try:
+                    # Call backend parse API first
+                    with st.spinner("🔍 Parsing your problem..."):
                         parse_response = requests.post(
                             f"{API_BASE_URL}/api/parse",
                             json={"text": edited_text},
@@ -451,13 +539,17 @@ else:
                                 "timestamp": datetime.now().isoformat()
                             }
                         ]
-                        
-                        # Check if clarification is needed
-                        if parsed.get("needs_clarification", False):
-                            st.warning(f"⚠️ Clarification needed: {parsed.get('clarification_reason', 'Additional information required')}")
-                            st.session_state.hitl_required = True
-                            st.session_state.feedback = 'clarification'
-                            st.stop()
+                    
+                    # Check if clarification is needed (outside spinner context)
+                    if parsed.get("needs_clarification", False):
+                        st.warning(f"⚠️ Clarification needed: {parsed.get('clarification_reason', 'Additional information required')}")
+                        st.info("💡 Please update the problem text above and click 'Confirm & Solve' again.")
+                        st.session_state.hitl_required = True
+                        st.session_state.feedback = 'clarification'
+                        st.stop()
+                    
+                    # Continue with solving
+                    with st.spinner("🤖 AI agents are working on your problem..."):
                         
                         # Call backend solve API with full RAG + Multi-Agent pipeline
                         solve_response = requests.post(
@@ -491,8 +583,17 @@ else:
                             st.session_state.hitl_reason = result.get('hitl_reason', [])
                             st.session_state.hitl_corrected_problem = edited_text
                             
-                            # Store partial results for display
-                            st.session_state.solution = result.get('solution', {})
+                            # Store partial results for display only if they belong to current problem
+                            solution_from_backend = result.get('solution', {})
+                            # Check if solution has actual steps and is not empty/old
+                            if solution_from_backend and solution_from_backend.get('steps'):
+                                # Tag solution with current problem text for validation
+                                solution_from_backend['_current_problem'] = edited_text
+                                st.session_state.solution = solution_from_backend
+                            else:
+                                # No valid solution from backend, keep it cleared
+                                st.session_state.solution = None
+                                
                             st.session_state.agent_trace = result.get('agent_trace', [])
                             st.session_state.verification = result.get('verification', {})
                             
@@ -545,30 +646,30 @@ else:
                         }
                         
                         st.session_state.feedback_submitted = False
-                    
-                    except requests.exceptions.Timeout:
-                        timeout_mins = st.session_state.request_timeout / 60
-                        st.error(f"❌ Request timed out after {timeout_mins:.0f} minutes. The LLM might be overloaded or the problem is very complex.")
-                        st.warning("""
-                        **Possible solutions:**
-                        - Try a simpler problem first to verify the system is working
-                        - Check if the backend LLM service (Ollama) is running and responsive
-                        - Restart the backend server if it's stuck
-                        - Increase the timeout in Advanced Settings (sidebar)
-                        - The problem might require multiple LLM calls - try breaking it into smaller parts
-                        """)
-                        st.info("🔧 You can check backend logs for more details")
-                        st.stop()
-                    except requests.exceptions.ConnectionError as e:
-                        st.error(f"❌ Cannot connect to backend: {str(e)}")
-                        st.error("Make sure backend is running on http://localhost:8000")
-                        st.stop()
-                    except requests.exceptions.RequestException as e:
-                        st.error(f"❌ Request failed: {str(e)}")
-                        st.stop()
-                    except Exception as e:
-                        st.error(f"❌ Unexpected error: {type(e).__name__}: {str(e)}")
-                        st.stop()
+                
+                except requests.exceptions.Timeout:
+                    timeout_mins = st.session_state.request_timeout / 60
+                    st.error(f"❌ Request timed out after {timeout_mins:.0f} minutes. The LLM might be overloaded or the problem is very complex.")
+                    st.warning("""
+                    **Possible solutions:**
+                    - Try a simpler problem first to verify the system is working
+                    - Check if the backend LLM service (Ollama) is running and responsive
+                    - Restart the backend server if it's stuck
+                    - Increase the timeout in Advanced Settings (sidebar)
+                    - The problem might require multiple LLM calls - try breaking it into smaller parts
+                    """)
+                    st.info("🔧 You can check backend logs for more details")
+                    st.stop()
+                except requests.exceptions.ConnectionError as e:
+                    st.error(f"❌ Cannot connect to backend: {str(e)}")
+                    st.error("Make sure backend is running on http://localhost:8000")
+                    st.stop()
+                except requests.exceptions.RequestException as e:
+                    st.error(f"❌ Request failed: {str(e)}")
+                    st.stop()
+                except Exception as e:
+                    st.error(f"❌ Unexpected error: {type(e).__name__}: {str(e)}")
+                    st.stop()
                 
                 st.success("✅ Solution generated!")
                 st.rerun()
@@ -576,6 +677,7 @@ else:
         with col2:
             if st.button("🗑️ Clear", width='stretch'):
                 st.session_state.extracted_text = ""
+                st.session_state.needs_review = False
                 # Increment problem counter to force text area refresh
                 st.session_state.problem_counter += 1
                 # Clear the text input area key
@@ -619,8 +721,13 @@ else:
             key="hitl_problem_edit"
         )
         
-        # Action 2: Edit solution (if available)
-        if st.session_state.solution:
+        # Action 2: Edit solution (only if available and matches current problem)
+        solution_belongs_to_current = (
+            st.session_state.solution and 
+            st.session_state.solution.get('_current_problem') == corrected_problem.strip()
+        )
+        
+        if solution_belongs_to_current:
             st.markdown("### 🔧 Action 2: Edit Solution (optional)")
             
             current_solution_steps = st.session_state.solution.get('steps', [])
