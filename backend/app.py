@@ -396,13 +396,15 @@ async def solve_problem(request: SolveRequest):
                 "timestamp": datetime.now().isoformat()
             })
         
-        # STEP 4: Solve with retrieved context
+        # STEP 4: Solve with retrieved context AND memory patterns
         solution_result = solver_agent.solve(
             problem_text=request.problem,
             topic=topic,
             variables=parsed.get('variables', {}),
             constraints=parsed.get('constraints', {}),
-            retrieved_context=retrieved_context
+            retrieved_context=retrieved_context,
+            similar_problems=similar_problems if similar_problems else None,
+            solution_patterns=solution_patterns if solution_patterns else None
         )
         agent_trace.append({
             "agent": "Solver Agent",

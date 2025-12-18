@@ -39,32 +39,33 @@ def main():
     # Initialize RAG service
     rag_service = RAGService(docs_dir="rag_docs", index_name="math-mentor")
     
-    # Check if PDFs exist
+    # Check if documents exist
     from pathlib import Path
     docs_dir = Path("rag_docs")
+    md_count = len(list(docs_dir.glob("**/*.md")))
     pdf_count = len(list(docs_dir.glob("**/*.pdf")))
     
-    if pdf_count == 0:
-        print("⚠️  No PDFs found in rag_docs/")
+    if md_count == 0 and pdf_count == 0:
+        print("⚠️  No documents found in rag_docs/")
         print()
-        print("Please add PDF documents to:")
+        print("Please add markdown or PDF documents to:")
         print("  - rag_docs/algebra/")
         print("  - rag_docs/calculus/")
         print("  - rag_docs/probability/")
-        print("  - rag_docs/linear_algebra/")
         print()
+        print("Markdown files (.md) are preferred for better quality!")
         print("Then run this script again.")
         return
     
-    print(f"Found {pdf_count} PDF(s)")
+    print(f"Found {md_count} markdown file(s) and {pdf_count} PDF(s)")
     print()
     
     # Build index
-    print("Processing PDFs and building index...")
+    print("Processing documents with smart chunking...")
     print("This may take a few minutes...")
     print()
     
-    rag_service.process_pdf_directory(force_rebuild=True)
+    rag_service.process_documents_directory(force_rebuild=True)
     
     print()
     print("=" * 60)

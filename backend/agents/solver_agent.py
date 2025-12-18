@@ -23,10 +23,12 @@ class SolverAgent:
         topic: str, 
         variables: Dict[str, Any],
         constraints: Dict[str, Any],
-        retrieved_context: List[Dict[str, Any]]
+        retrieved_context: List[Dict[str, Any]],
+        similar_problems: Optional[List[Dict[str, Any]]] = None,
+        solution_patterns: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
-        Solve math problem using retrieved context
+        Solve math problem using retrieved context and memory
         
         Args:
             problem_text: The math problem
@@ -34,6 +36,8 @@ class SolverAgent:
             variables: Extracted variables
             constraints: Problem constraints
             retrieved_context: Retrieved chunks from RAG
+            similar_problems: Similar problems from memory (optional)
+            solution_patterns: Known solution patterns from memory (optional)
         
         Returns:
             Solution with steps, answer, and metadata
@@ -43,7 +47,8 @@ class SolverAgent:
             return self._solve_simple_probability(problem_text)
         
         # Use LLM for complex problems
-        return self._solve_with_llm(problem_text, topic, variables, constraints, retrieved_context)
+        return self._solve_with_llm(problem_text, topic, variables, constraints, 
+                                   retrieved_context, similar_problems, solution_patterns)
     
     def _is_simple_probability(self, problem_text: str) -> bool:
         """Check if this is a simple probability (single-event or conditional)"""
@@ -155,23 +160,29 @@ class SolverAgent:
         return {"success": False, "error": "Pattern matching failed"}
     
     def _solve_with_llm(self, problem_text: str, topic: str, variables: Dict[str, Any],
-                        constraints: Dict[str, Any], retrieved_context: List[Dict[str, Any]]) -> Dict[str, Any]:
+                        constraints: Dict[str, Any], retrieved_context: List[Dict[str, Any]],
+                        similar_problems: Optional[List[Dict[str, Any]]] = None,
+                        solution_patterns: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
-        Solve using LLM for complex problems
+        Solve using LLM for complex problems with memory patterns
         """
         # Build context section
         context_text = self._format_context(retrieved_context)
+        
+        # Build memory patterns section
+        memory_text = self._format_memory_patterns(solution_patterns, similar_problems)
         
         # Build solver prompt
         system_prompt = """You are an expert math tutor solving JEE-level problems.
 
 CRITICAL RULES:
 1. Use ONLY the retrieved context below for formulas and methods
-2. Show step-by-step working clearly
-3. Explain your reasoning at each step
-4. If context is insufficient, say so clearly
-5. Verify domain constraints (e.g., x > 0 for √x)
-6. Format math using LaTeX where needed
+2. Reference known solution patterns when applicable
+3. Show step-by-step working clearly
+4. Explain your reasoning at each step
+5. If context is insufficient, say so clearly
+6. Verify domain constraints (e.g., x > 0 for √x)
+7. Format math using LaTeX where needed
 
 Your solution must be structured and easy to follow."""
 
@@ -187,9 +198,10 @@ Your solution must be structured and easy to follow."""
 
 **Retrieved Context:**
 {context_text}
-
+{memory_text}
 **Instructions:**
 - Use the context to identify relevant formulas/methods
+- Apply known solution patterns if applicable
 - Show all steps clearly
 - State your final answer
 - If you need more information, say so
@@ -257,6 +269,42 @@ Provide your solution:"""
             )
         
         return "\n\n".join(formatted) if formatted else "No relevant context found."
+    
+    def _format_memory_patterns(self, solution_patterns: Optional[List[Dict[str, Any]]], 
+                                similar_problems: Optional[List[Dict[str, Any]]]) -> str:
+        """
+        Format memory patterns and similar problems for prompt
+        
+        Args:
+            solution_patterns: Known solution patterns from memory
+            similar_problems: Similar past problems
+        
+        Returns:
+            Formatted memory section for prompt
+        """
+        if not solution_patterns and not similar_problems:
+            return ""
+        
+        formatted = []
+        
+        # Add solution patterns
+        if solution_patterns:
+            formatted.append("\n**Known Solution Patterns (From Past Correct Solutions):**")
+            for i, pattern in enumerate(solution_patterns[:2], 1):  # Top 2 patterns
+                steps = pattern.get('steps', [])
+                if steps:
+                    formatted.append(f"\nPattern {i}:")
+                    for j, step in enumerate(steps[:3], 1):  # First 3 steps
+                        step_text = step if isinstance(step, str) else str(step)
+                        formatted.append(f"  {j}. {step_text}")
+                    formatted.append(f"  → Answer: {pattern.get('final_answer', 'N/A')}")
+        
+        # Add similar problems reference
+        if similar_problems:
+            formatted.append(f"\n**Similar Problems Found:** {len(similar_problems)} similar problems in memory")
+            formatted.append("Use similar approaches if applicable.\n")
+        
+        return "\n".join(formatted) if formatted else ""
     
     def _extract_steps(self, solution_text: str) -> List[str]:
         """Extract solution steps from text"""

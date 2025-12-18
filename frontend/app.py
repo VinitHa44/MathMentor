@@ -13,6 +13,13 @@ from io import BytesIO
 from PIL import Image
 import time
 
+# Try to import audio recorder, use fallback if not available
+try:
+    from audio_recorder_streamlit import audio_recorder
+    AUDIO_RECORDER_AVAILABLE = True
+except ImportError:
+    AUDIO_RECORDER_AVAILABLE = False
+
 # Import custom components
 from components.ui_components import (
     render_agent_trace,
@@ -99,38 +106,10 @@ render_header()
 
 # Sidebar
 with st.sidebar:
-    st.markdown("### 📋 Settings")
-    
-    # Model selection
-    model_choice = st.selectbox(
-        "AI Model",
-        ["GPT-4", "Claude 3.5", "Gemini Pro"],
-        help="Select the AI model for solving"
-    )
-    
-    # Topic filter
-    topic_filter = st.multiselect(
-        "Focus Topics",
-        ["Algebra", "Probability", "Calculus", "Linear Algebra", "All"],
-        default=["All"]
-    )
-    
-    # Difficulty level
-    difficulty = st.select_slider(
-        "Difficulty Level",
-        options=["Easy", "Medium", "Hard", "JEE Advanced"],
-        value="Medium"
-    )
-    
-    # Explanation detail
-    explanation_level = st.radio(
-        "Explanation Detail",
-        ["Concise", "Standard", "Detailed"],
-        index=1
-    )
+    st.markdown("### ⚙️ Settings")
     
     # Advanced settings expander
-    with st.expander("⚙️ Advanced Settings"):
+    with st.expander("🕐 Timeout Configuration"):
         timeout_minutes = st.slider(
             "Request Timeout (minutes)",
             min_value=1,
@@ -143,7 +122,7 @@ with st.sidebar:
     st.markdown("---")
     
     # Memory toggle
-    if st.button("📚 View Memory & History", width='stretch'):
+    if st.button("📚 View Memory & History", use_container_width=True):
         st.session_state.show_memory = not st.session_state.show_memory
     
     # Stats
@@ -168,7 +147,7 @@ with st.sidebar:
         - ✋ Human-in-the-loop
         """)
     
-    if st.button("🔄 Reset Session", width='stretch'):
+    if st.button("🔄 Reset Session", use_container_width=True):
         for key in list(st.session_state.keys()):
             del st.session_state[key]
         st.rerun()
@@ -274,20 +253,64 @@ else:
         )
         
         if audio_input_method == "🎙️ Record Audio":
-            st.warning("🎤 Click the record button below to start recording")
-            
-            # Audio recorder component (would need streamlit-audiorecorder or similar)
-            # For now, showing placeholder
-            st.markdown("""
-            <div style='border: 2px dashed #ccc; padding: 3rem; text-align: center; border-radius: 10px;'>
-                <p style='font-size: 1.2rem; color: #666;'>🎤 Audio Recorder</p>
-                <p style='color: #999;'>Click to start/stop recording</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # Simulate recording
-            if st.button("🔴 Start Recording", type="primary"):
-                st.info("Recording... (This is a placeholder - implement with audio recorder library)")
+            if not AUDIO_RECORDER_AVAILABLE:
+                st.warning("⚠️ Audio recorder component not available. Please use 'Upload Audio File' option instead.")
+                st.info("To enable audio recording, install: `pip install audio-recorder-streamlit`")
+            else:
+                st.info("🎤 Click the button below to start/stop recording")
+                
+                # Audio recorder component
+                audio_bytes = audio_recorder(
+                    text="",
+                    recording_color="#e74c3c",
+                    neutral_color="#3498db",
+                    icon_name="microphone",
+                    icon_size="3x"
+                )
+                
+                if audio_bytes:
+                    st.success("✅ Recording captured!")
+                    
+                    # Play back the recorded audio
+                    st.audio(audio_bytes, format="audio/wav")
+                    
+                    if st.button("🎯 Transcribe Recording", type="primary", key="transcribe_recording"):
+                        with st.spinner("Transcribing audio..."):
+                            try:
+                                # Convert audio to base64
+                                audio_str = base64.b64encode(audio_bytes).decode()
+                                
+                                # Call backend ASR API
+                                response = requests.post(
+                                    f"{API_BASE_URL}/api/transcribe",
+                                    json={"audio_base64": audio_str, "filename": "recording.wav"},
+                                    timeout=st.session_state.request_timeout
+                                )
+                                
+                                if response.status_code == 200:
+                                    result = response.json()
+                                    st.session_state.extracted_text = result["text"]
+                                    st.session_state.asr_confidence = result["confidence"]
+                                    # Increment problem counter to force text area refresh
+                                    st.session_state.problem_counter += 1
+                                    # Clear previous solution and agent trace
+                                    st.session_state.solution = None
+                                    st.session_state.agent_trace = []
+                                    st.session_state.feedback_submitted = False
+                                    st.success(f"✅ Transcribed: {result['text'][:100]}...")
+                                    st.info(f"Confidence: {result['confidence']:.2%}")
+                                    st.rerun()
+                                else:
+                                    st.error(f"Transcription failed: {response.json().get('detail', 'Unknown error')}")
+                            except requests.exceptions.Timeout:
+                                st.error("❌ Transcription request timed out. Try again or use a shorter recording.")
+                            except requests.exceptions.ConnectionError as e:
+                                st.error(f"❌ Cannot connect to backend: {str(e)}")
+                                st.error("Make sure backend is running on http://localhost:8000")
+                            except requests.exceptions.RequestException as e:
+                                st.error(f"❌ Transcription request failed: {str(e)}")
+                            except Exception as e:
+                                st.error(f"❌ Unexpected error: {type(e).__name__}: {str(e)}")
         
         else:
             uploaded_audio = st.file_uploader(

@@ -1,6 +1,7 @@
 """
 RAG Service - Retrieval Augmented Generation
 Handles PDF extraction, chunking, embedding, and retrieval using Pinecone
+Uses smart document-type-aware chunking strategies
 """
 
 import os
@@ -10,6 +11,7 @@ from pathlib import Path
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from pinecone import Pinecone, ServerlessSpec
+from services.smart_chunker import SmartChunker, ChunkType
 
 try:
     from pypdf import PdfReader
@@ -18,18 +20,21 @@ except ImportError:
     PdfReader = None
 
 class RAGService:
-    """Service for RAG pipeline: PDF processing, embedding, and retrieval using Pinecone"""
+    """Service for RAG pipeline with smart document-type-aware chunking"""
     
     def __init__(self, docs_dir: str = "rag_docs", index_name: str = "math-mentor"):
         """
-        Initialize RAG service with Pinecone
+        Initialize RAG service with Pinecone and smart chunker
         
         Args:
-            docs_dir: Directory containing organized PDF documents
+            docs_dir: Directory containing organized documents (markdown preferred)
             index_name: Pinecone index name
         """
         self.docs_dir = Path(docs_dir)
         self.index_name = index_name
+        
+        # Initialize smart chunker
+        self.chunker = SmartChunker()
         
         # Initialize embedding model (local, free)
         print("Loading embedding model...")
@@ -127,9 +132,10 @@ class RAGService:
         
         return [c for c in chunks if len(c) > 50]  # Filter very short chunks
     
-    def process_pdf_directory(self, force_rebuild: bool = False):
+    def process_documents_directory(self, force_rebuild: bool = False):
         """
-        Process all PDFs in organized directory structure
+        Process all markdown files with smart chunking
+        Prioritizes markdown over PDFs for better quality
         
         Args:
             force_rebuild: Force rebuild even if index exists
@@ -138,11 +144,9 @@ class RAGService:
             print("RAG index already loaded. Use force_rebuild=True to rebuild.")
             return
         
-        print(f"Processing PDFs from {self.docs_dir}...")
+        print(f"Processing documents from {self.docs_dir}...")
         
-        self.chunks = []
-        self.metadata = []
-        chunks_to_upsert = []
+        all_chunks = []
         
         # Process each topic folder
         for topic_dir in self.docs_dir.iterdir():
@@ -150,41 +154,82 @@ class RAGService:
                 continue
             
             topic = topic_dir.name
-            print(f"Processing topic: {topic}")
+            print(f"\nProcessing topic: {topic}")
             
-            # Process PDFs in topic folder
-            for pdf_file in topic_dir.glob("*.pdf"):
-                print(f"  - {pdf_file.name}")
-                
-                # Extract text
-                text = self.extract_pdf_text(pdf_file)
-                if not text:
-                    continue
-                
-                # Clean text
-                text = self.clean_text(text)
-                
-                # Chunk text
-                chunks = self.chunk_text(text)
-                
-                # Add chunks with metadata
-                for i, chunk in enumerate(chunks):
-                    chunks_to_upsert.append({
-                        "text": chunk,
-                        "metadata": {
-                            "source": pdf_file.stem,
-                            "topic": topic,
-                            "file": pdf_file.name,
-                            "chunk_id": i,
-                            "difficulty": "jee_basic"  # Can be extracted from filename
-                        }
-                    })
+            # Process markdown files (preferred)
+            md_files = list(topic_dir.glob("*.md"))
+            if md_files:
+                print(f"  Found {len(md_files)} markdown file(s)")
+                for md_file in md_files:
+                    print(f"    - {md_file.name}")
+                    chunks = self.chunker.chunk_markdown_file(md_file, topic)
+                    all_chunks.extend(chunks)
+                    print(f"      → {len(chunks)} chunks")
+            
+            # Fallback to PDFs if no markdown
+            elif list(topic_dir.glob("*.pdf")):
+                print(f"  No markdown files found, falling back to PDFs")
+                for pdf_file in topic_dir.glob("*.pdf"):
+                    print(f"    - {pdf_file.name}")
+                    chunks = self._process_pdf_basic(pdf_file, topic)
+                    all_chunks.extend(chunks)
+                    print(f"      → {len(chunks)} chunks")
         
-        print(f"Processed {len(chunks_to_upsert)} chunks from {len(set(m['source'] for m in self.metadata))} documents")
+        # Get statistics
+        stats = self.chunker.get_chunk_stats(all_chunks)
+        print(f"\n{'='*60}")
+        print(f"Chunking Summary:")
+        print(f"{'='*60}")
+        print(f"Total chunks: {stats['total']}")
+        print(f"Average length: {stats['avg_length']} characters")
+        print(f"\nBy type:")
+        for chunk_type, count in stats['by_type'].items():
+            print(f"  {chunk_type}: {count}")
+        print(f"\nBy topic:")
+        for topic, count in stats['by_topic'].items():
+            print(f"  {topic}: {count}")
+        print(f"{'='*60}\n")
         
         # Upsert to Pinecone
-        if chunks_to_upsert:
-            self._upsert_to_pinecone(chunks_to_upsert)
+        if all_chunks:
+            self._upsert_chunks_to_pinecone(all_chunks)
+    
+    def _process_pdf_basic(self, pdf_path: Path, topic: str) -> List[Dict[str, Any]]:
+        """
+        Basic PDF processing with simple chunking (fallback)
+        
+        Args:
+            pdf_path: Path to PDF file
+            topic: Topic name
+        
+        Returns:
+            List of chunks with metadata
+        """
+        # Extract text
+        text = self.extract_pdf_text(pdf_path)
+        if not text:
+            return []
+        
+        # Clean text
+        text = self.clean_text(text)
+        
+        # Simple chunking
+        text_chunks = self.chunk_text(text, chunk_size=400, overlap=50)
+        
+        # Convert to chunk format
+        chunks = []
+        for i, chunk_text in enumerate(text_chunks):
+            chunks.append({
+                "text": chunk_text,
+                "type": "general",
+                "topic": topic,
+                "subtopic": "general",
+                "source": pdf_path.stem,
+                "difficulty": "basic",
+                "chunk_id": i
+            })
+        
+        return chunks
     
     def _init_index(self):
         """Initialize or connect to Pinecone index"""
@@ -215,76 +260,112 @@ class RAGService:
             print(f"Error initializing Pinecone index: {e}")
             self.index = None
     
-    def _upsert_to_pinecone(self, chunks_with_metadata):
-        """Upsert chunks to Pinecone"""
+    def _upsert_chunks_to_pinecone(self, chunks: List[Dict[str, Any]]):
+        """
+        Upsert smart chunks to Pinecone with rich metadata
+        
+        Args:
+            chunks: List of chunks with metadata
+        """
         if not self.index:
             print("Pinecone index not available")
             return
         
-        print("Creating embeddings...")
-        texts = [item['text'] for item in chunks_with_metadata]
+        print("\n" + "="*60)
+        print("Upserting to Pinecone...")
+        print("="*60)
+        
+        # Create embeddings
+        texts = [chunk['text'] for chunk in chunks]
+        print(f"Creating embeddings for {len(texts)} chunks...")
         embeddings = self.embedder.encode(texts, show_progress_bar=True)
         
-        print("Upserting to Pinecone...")
+        print("Preparing vectors...")
         vectors = []
-        for i, (chunk_data, embedding) in enumerate(zip(chunks_with_metadata, embeddings)):
-            vector_id = f"{chunk_data['metadata']['source']}_{chunk_data['metadata']['chunk_id']}"
+        for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+            # Create unique ID
+            vector_id = f"{chunk['source']}_{chunk['type']}_{i}"
+            
+            # Build metadata - include full text (Pinecone limit is ~40KB per metadata)
+            metadata = {
+                "text": chunk['text'],  # Full text of chunk
+                "type": chunk['type'],  # formula, example, definition, etc.
+                "topic": chunk['topic'],
+                "subtopic": chunk.get('subtopic', 'general'),
+                "source": chunk['source'],
+                "difficulty": chunk.get('difficulty', 'basic'),
+            }
+            
+            # Add optional metadata
+            if 'pattern' in chunk:
+                metadata['pattern'] = chunk['pattern']
+            
             vectors.append({
                 "id": vector_id,
                 "values": embedding.tolist(),
-                "metadata": {
-                    "text": chunk_data['text'],
-                    "source": chunk_data['metadata']['source'],
-                    "topic": chunk_data['metadata']['topic'],
-                    "file": chunk_data['metadata']['file'],
-                    "chunk_id": chunk_data['metadata']['chunk_id'],
-                    "difficulty": chunk_data['metadata']['difficulty']
-                }
+                "metadata": metadata
             })
             
             # Batch upsert every 100 vectors
             if len(vectors) >= 100:
                 self.index.upsert(vectors=vectors)
+                print(f"  Upserted {len(vectors)} vectors...")
                 vectors = []
         
         # Upsert remaining vectors
         if vectors:
             self.index.upsert(vectors=vectors)
+            print(f"  Upserted {len(vectors)} vectors...")
         
-        print(f"Upserted {len(chunks_with_metadata)} vectors to Pinecone")
-        
-        # Store chunks and metadata locally for reference
-        for chunk_data in chunks_with_metadata:
-            self.chunks.append(chunk_data['text'])
-            self.metadata.append(chunk_data['metadata'])
+        print(f"\n✅ Successfully upserted {len(chunks)} chunks to Pinecone")
+        print("="*60 + "\n")
     
-    def retrieve(self, query: str, top_k: int = 5, topic_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+    def retrieve(self, query: str, top_k: int = 5, 
+                 topic_filter: Optional[str] = None,
+                 type_filter: Optional[str] = None,
+                 difficulty_filter: Optional[str] = None,
+                 pattern_filter: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Retrieve relevant chunks for query from Pinecone
+        Retrieve relevant chunks for query from Pinecone with advanced filtering
         
         Args:
             query: Query text
             top_k: Number of results to return
             topic_filter: Optional topic filter (algebra, calculus, etc.)
+            type_filter: Optional type filter (formula, example, definition, etc.)
+            difficulty_filter: Optional difficulty filter (basic, jee_basic, jee_advanced)
+            pattern_filter: Optional pattern filter (limit, derivative, probability, etc.)
         
         Returns:
             List of retrieved chunks with metadata and scores
         """
         if not self.index:
-            print("Pinecone index not available. Process PDFs first.")
+            print("Pinecone index not available. Process documents first.")
             return []
         
         # Embed query
         query_embedding = self.embedder.encode([query])
         
-        # Build filter
+        # Build advanced filter
         filter_dict = {}
+        
         if topic_filter:
-            filter_dict = {"topic": {"$eq": topic_filter.lower()}}
+            filter_dict["topic"] = {"$eq": topic_filter.lower()}
+        
+        if type_filter:
+            filter_dict["type"] = {"$eq": type_filter.lower()}
+        
+        if difficulty_filter:
+            filter_dict["difficulty"] = {"$eq": difficulty_filter.lower()}
+        
+        if pattern_filter:
+            filter_dict["pattern"] = {"$eq": pattern_filter.lower()}
         
         # Query Pinecone
         try:
-            search_k = top_k * 2 if topic_filter else top_k
+            # Get more results if filtering
+            search_k = top_k * 3 if filter_dict else top_k
+            
             query_response = self.index.query(
                 vector=query_embedding.tolist(),
                 top_k=search_k,
@@ -298,11 +379,13 @@ class RAGService:
                 results.append({
                     "text": match.metadata.get("text", ""),
                     "metadata": {
-                        "source": match.metadata.get("source", ""),
+                        "type": match.metadata.get("type", ""),
                         "topic": match.metadata.get("topic", ""),
-                        "file": match.metadata.get("file", ""),
-                        "chunk_id": match.metadata.get("chunk_id", 0),
-                        "difficulty": match.metadata.get("difficulty", "")
+                        "subtopic": match.metadata.get("subtopic", ""),
+                        "source": match.metadata.get("source", ""),
+                        "difficulty": match.metadata.get("difficulty", ""),
+                        "pattern": match.metadata.get("pattern", ""),
+                        "example_num": match.metadata.get("example_num", 0)
                     },
                     "score": float(match.score),
                     "id": match.id
@@ -316,3 +399,37 @@ class RAGService:
         except Exception as e:
             print(f"Error querying Pinecone: {e}")
             return []
+    
+    def retrieve_by_agent_role(self, query: str, agent_role: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        """
+        Retrieve chunks optimized for specific agent roles
+        
+        Args:
+            query: Query text
+            agent_role: Role (solver, explainer, verifier)
+            top_k: Number of results
+        
+        Returns:
+            Retrieved chunks
+        """
+        if agent_role == "solver":
+            # Solver prefers procedures + formulas
+            procedures = self.retrieve(query, top_k=top_k//2, type_filter="procedure")
+            formulas = self.retrieve(query, top_k=top_k//2, type_filter="formula")
+            return procedures + formulas
+        
+        elif agent_role == "explainer":
+            # Explainer prefers examples + definitions
+            examples = self.retrieve(query, top_k=top_k//2, type_filter="example")
+            definitions = self.retrieve(query, top_k=top_k//2, type_filter="definition")
+            return examples + definitions
+        
+        elif agent_role == "verifier":
+            # Verifier prefers pitfalls + formulas
+            pitfalls = self.retrieve(query, top_k=top_k//2, type_filter="pitfall")
+            formulas = self.retrieve(query, top_k=top_k//2, type_filter="formula")
+            return pitfalls + formulas
+        
+        else:
+            # Default retrieval
+            return self.retrieve(query, top_k=top_k)
