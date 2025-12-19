@@ -4,9 +4,12 @@
 # Tesseract OCR for image text extraction
 tesseract-ocr
 tesseract-ocr-eng
+libtesseract-dev
+libleptonica-dev
 
 # FFmpeg for audio processing (needed for audio recording)
 ffmpeg
+libavcodec-extra
 
 # Additional dependencies
 libtesseract-dev

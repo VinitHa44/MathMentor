@@ -272,14 +272,8 @@ else:
                 try:
                     st.info("🎤 Click the button below to start/stop recording")
                     
-                    # Audio recorder component
-                    audio_bytes = audio_recorder(
-                        text="",
-                        recording_color="#e74c3c",
-                        neutral_color="#3498db",
-                        icon_name="microphone",
-                        icon_size="3x"
-                    )
+                    # Audio recorder component (minimal parameters for compatibility)
+                    audio_bytes = audio_recorder()
                     
                     if audio_bytes:
                         st.success("✅ Recording captured!")
