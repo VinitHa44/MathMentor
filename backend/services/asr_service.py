@@ -1,64 +1,55 @@
 """
 ASR Service - Convert speech to text
-Uses OpenAI Whisper for audio transcription
+Uses Groq API (Whisper) for audio transcription
 """
 
-import whisper
 import tempfile
 import os
-import shutil
-import subprocess
 from typing import Dict, Any
-import numpy as np
 from utils.math_speech_converter import MathSpeechConverter
 
+# Try importing Groq
+try:
+    from groq import Groq
+    GROQ_AVAILABLE = True
+except ImportError:
+    GROQ_AVAILABLE = False
+
 class ASRService:
-    """Service for transcribing audio to text"""
+    """Service for transcribing audio to text using Groq API"""
     
-    def __init__(self, model_size: str = "base"):
+    def __init__(self, model_size: str = "whisper-large-v3"):
         """
-        Initialize ASR service with Whisper
+        Initialize ASR service with Groq API
         
         Args:
-            model_size: Whisper model size (tiny, base, small, medium, large)
+            model_size: Whisper model on Groq (whisper-large-v3)
         """
         self.model_size = model_size
-        self.ffmpeg_available = self._check_ffmpeg()
         self.math_converter = MathSpeechConverter()
         
-        if not self.ffmpeg_available:
-            print("⚠️ WARNING: FFmpeg not found in system PATH!")
-            print("Audio transcription requires FFmpeg to be installed.")
-            print("Please install FFmpeg:")
-            print("1. Download from: https://www.gyan.dev/ffmpeg/builds/")
-            print("2. Extract and add to system PATH")
-            print("3. Or use: winget install FFmpeg")
-            self.model = None
-            return
+        # Initialize Groq client if API key is available
+        groq_api_key = os.getenv("GROQ_API_KEY")
         
-        try:
-            print(f"Loading Whisper model: {model_size}...")
-            self.model = whisper.load_model(model_size)
-            print(f"✅ Whisper model '{model_size}' loaded successfully")
-        except Exception as e:
-            print(f"❌ Error loading Whisper model: {e}")
-            self.model = None
-    
-    def _check_ffmpeg(self) -> bool:
-        """Check if FFmpeg is available in system PATH"""
-        try:
-            result = subprocess.run(
-                ["ffmpeg", "-version"],
-                capture_output=True,
-                timeout=5
-            )
-            return result.returncode == 0
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return False
+        if not GROQ_AVAILABLE:
+            print("⚠️ WARNING: Groq package not installed!")
+            print("Install with: pip install groq")
+            self.client = None
+        elif not groq_api_key:
+            print("⚠️ WARNING: GROQ_API_KEY not found in environment!")
+            print("Please set GROQ_API_KEY in your .env file")
+            self.client = None
+        else:
+            try:
+                self.client = Groq(api_key=groq_api_key)
+                print(f"✅ Groq ASR client initialized with model: {model_size}")
+            except Exception as e:
+                print(f"❌ Error initializing Groq client: {e}")
+                self.client = None
     
     def transcribe_audio(self, audio_data: bytes) -> Dict[str, Any]:
         """
-        Transcribe audio to text
+        Transcribe audio to text using Groq API
         
         Args:
             audio_data: Raw audio bytes
@@ -66,25 +57,20 @@ class ASRService:
         Returns:
             Dict with transcribed text and confidence
         """
-        if not self.ffmpeg_available:
+        if not GROQ_AVAILABLE:
             return {
-                "text": "FFmpeg is not installed. Please install FFmpeg to use audio transcription.\n\n"
-                        "Installation options:\n"
-                        "1. Download from: https://www.gyan.dev/ffmpeg/builds/\n"
-                        "2. Extract and add bin folder to system PATH\n"
-                        "3. Or use: winget install FFmpeg\n"
-                        "4. Restart the backend after installation",
+                "text": "Groq package not installed. Please install with: pip install groq",
                 "confidence": 0.0,
-                "error": "FFmpeg not found in system PATH",
-                "provider": "whisper"
+                "error": "Groq package not available",
+                "provider": "groq"
             }
         
-        if self.model is None:
+        if self.client is None:
             return {
-                "text": "Whisper model not loaded. Please restart backend.",
+                "text": "Groq API key not configured. Please set GROQ_API_KEY environment variable.",
                 "confidence": 0.0,
-                "error": "Whisper model not loaded",
-                "provider": "whisper"
+                "error": "Groq client not initialized",
+                "provider": "groq"
             }
         
         try:
@@ -92,7 +78,7 @@ class ASRService:
             print(f"Received audio data: {len(audio_data)} bytes")
             
             # Save audio to temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".m4a") as temp_audio:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_audio:
                 temp_audio.write(audio_data)
                 temp_audio_path = temp_audio.name
             
@@ -111,23 +97,27 @@ class ASRService:
             # Clean up temporary file
             os.unlink(temp_audio_path)
             
-            # Extract text and confidence
-            text = result["text"].strip()
             
-            # Calculate average confidence from segments
-            segments = result.get("segments", [])
-            if segments:
-                confidences = []
-                for segment in segments:
-                    # Whisper provides logprob which we convert to confidence
-                    if "avg_logprob" in segment:
-                        # Convert log probability to confidence (0-1)
-                        conf = np.exp(segment["avg_logprob"])
-                        confidences.append(conf)
-                
-                avg_confidence = sum(confidences) / len(confidences) if confidences else 0.8
-            else:
-                avg_confidence = 0.8  # Default confidence if no segments
+            # Transcribe using Groq API
+            print(f"Transcribing with Groq ({self.model_size})...")
+            
+            with open(temp_audio_path, "rb") as audio_file:
+                transcription = self.client.audio.transcriptions.create(
+                    file=("audio.mp3", audio_file),
+                    model=self.model_size,
+                    response_format="verbose_json"
+                )
+            
+            # Clean up temp file
+            os.unlink(temp_audio_path)
+            print("✅ Transcription successful")
+            
+            # Extract text
+            text = transcription.text.strip()
+            
+            # Calculate confidence from Groq response (if available)
+            # Groq doesn't always provide confidence, default to 0.90
+            avg_confidence = 0.90
             
             # Convert spoken math to mathematical notation
             converted_text = self.math_converter.convert(text)
@@ -141,18 +131,25 @@ class ASRService:
                 "text": converted_text,
                 "original_transcript": text,  # Keep original for reference
                 "confidence": round(avg_confidence, 2),
-                "provider": "whisper",
-                "language": result.get("language", "en"),
+                "provider": "groq",
+                "language": getattr(transcription, "language", "en"),
                 "math_notation_applied": text.lower() != converted_text.lower()
             }
         
         except Exception as e:
             print(f"ASR error: {str(e)}")
+            # Clean up temp file on error
+            try:
+                if 'temp_audio_path' in locals():
+                    os.unlink(temp_audio_path)
+            except:
+                pass
+            
             return {
                 "text": f"ASR Error: {str(e)}",
                 "confidence": 0.0,
                 "error": str(e),
-                "provider": "whisper"
+                "provider": "groq"
             }
     
     def enhance_audio(self, audio_data: bytes) -> bytes:
