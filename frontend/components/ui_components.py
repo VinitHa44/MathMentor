@@ -189,17 +189,17 @@ def render_solution_card(solution: Dict[str, Any]):
     # Confidence indicator
     render_confidence_indicator(solution.get('confidence', 0.5), "Solution Confidence")
     
-    # Final answer box
-    st.markdown(f"""
-    <div style='padding: 1.5rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                border-radius: 12px; margin: 1rem 0; box-shadow: 0 4px 15px rgba(0,0,0,0.2);'>
-        <h3 style='color: white; margin: 0 0 0.5rem 0; font-size: 1.2rem;'>🎯 Final Answer</h3>
-        <div style='background: white; padding: 1rem; border-radius: 8px; 
-                    font-size: 1.3rem; font-weight: 600; color: #333; text-align: center;'>
-            {solution.get('final_answer', 'No answer provided')}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    # # Final answer box
+    # st.markdown(f"""
+    # <div style='padding: 1.5rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+    #             border-radius: 12px; margin: 1rem 0; box-shadow: 0 4px 15px rgba(0,0,0,0.2);'>
+    #     <h3 style='color: white; margin: 0 0 0.5rem 0; font-size: 1.2rem;'>🎯 Final Answer</h3>
+    #     <div style='background: white; padding: 1rem; border-radius: 8px; 
+    #                 font-size: 1.3rem; font-weight: 600; color: #333; text-align: center;'>
+    #         {solution.get('final_answer', 'No answer provided')}
+    #     </div>
+    # </div>
+    # """, unsafe_allow_html=True)
     
     # Step-by-step solution in one dropdown
     st.markdown("### 📖 Step-by-Step Solution")
