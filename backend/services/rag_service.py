@@ -397,6 +397,10 @@ class RAGService:
         )
         query_embedding = response.embeddings[0]
         
+        # Cohere returns a list, ensure it's in the right format
+        if not isinstance(query_embedding, list):
+            query_embedding = list(query_embedding)
+        
         # Build advanced filter
         filter_dict = {}
         
@@ -418,7 +422,7 @@ class RAGService:
             search_k = top_k * 3 if filter_dict else top_k
             
             query_response = self.index.query(
-                vector=query_embedding.tolist(),
+                vector=query_embedding,
                 top_k=search_k,
                 include_metadata=True,
                 filter=filter_dict if filter_dict else None

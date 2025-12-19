@@ -154,15 +154,15 @@ def render_retrieved_context(contexts: List[Dict[str, Any]]):
         with st.container():
             st.markdown(f"""
             <div style='padding: 1rem; margin: 0.5rem 0; border-left: 4px solid {border_color}; 
-                        background: #f8f9fa; border-radius: 8px;'>
+                        background: rgba(30, 30, 30, 0.6); border-radius: 8px;'>
                 <div style='display: flex; justify-content: space-between; margin-bottom: 0.5rem;'>
-                    <strong style='color: #1f77b4;'>📄 {ctx.get('source', 'Unknown Source')}</strong>
+                    <strong style='color: #64b5f6;'>📄 {ctx.get('source', 'Unknown Source')}</strong>
                     <span style='background: {border_color}; color: white; padding: 0.2rem 0.6rem; 
                                  border-radius: 12px; font-size: 0.85rem;'>
                         {relevance_percent:.0f}% relevant
                     </span>
                 </div>
-                <p style='margin: 0; color: #333; line-height: 1.6;'>{ctx.get('content', '')}</p>
+                <p style='margin: 0; color: #e0e0e0; line-height: 1.6;'>{ctx.get('content', '')}</p>
             </div>
             """, unsafe_allow_html=True)
 

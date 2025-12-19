@@ -134,8 +134,15 @@ brew install tesseract ffmpeg
 ```bash
 # Create .env file at root
 PINECONE_API_KEY=your_pinecone_key
+COHERE_API_KEY=your_cohere_key
+GROQ_API_KEY=your_groq_key  # For LLM inference
 NO_PROXY=localhost,127.0.0.1
 ```
+
+**Get free API keys:**
+- Pinecone: https://app.pinecone.io/ (vector database for RAG)
+- Cohere: https://dashboard.cohere.com/api-keys (embeddings for RAG)
+- Groq: https://console.groq.com/keys (fast LLM inference)
 
 ### Running the Application
 
@@ -167,15 +174,30 @@ python main.py
 
 ### First-Time Setup
 
-1. **Add RAG documents** (optional):
-   - Place PDF files in `backend/rag_docs/` organized by topic
-   - Run indexing: `python backend/scripts/build_rag_index.py`
+1. **Build Pinecone RAG Index** (Required for full functionality):
+   
+   The system includes 43+ curated markdown files with math examples, formulas, and solutions. To enable RAG-powered context retrieval:
+   
+   ```bash
+   # Navigate to backend directory
+   cd backend
+   
+   # Build and upload index to Pinecone
+   python scripts/build_rag_index.py
+   ```
+   
+   This will:
+   - Process all markdown files in `rag_docs/` (algebra, calculus, probability)
+   - Create smart chunks (formulas, examples, definitions)
+   - Generate embeddings using Cohere API (free tier)
+   - Upload to Pinecone vector database
+   
+   **Note**: You need `PINECONE_API_KEY` and `COHERE_API_KEY` in your `.env` file. The script takes 2-5 minutes to complete.
 
-2. **Test the system**:
-   - Open browser to `http://localhost:8501`
-   - Try sample problem: "Solve x² - 5x + 6 = 0"
-   - Verify OCR with an image upload
-   - Check agent trace in the UI
+2. **Add custom RAG documents** (optional):
+   - Add your own markdown (.md) or PDF files to `backend/rag_docs/` organized by topic folders
+   - Markdown is preferred for better quality chunking
+   - Rerun `python scripts/build_rag_index.py` to rebuild the index
 
 ## 📁 Project Structure
 
