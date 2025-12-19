@@ -84,20 +84,6 @@ class ASRService:
             
             print(f"Saved to temp file: {temp_audio_path}")
             
-            # Transcribe audio
-            result = self.model.transcribe(
-                temp_audio_path,
-                language="en",
-                task="transcribe",
-                verbose=False
-            )
-            
-            print(f"Whisper result: {result.get('text', '')}")
-            
-            # Clean up temporary file
-            os.unlink(temp_audio_path)
-            
-            
             # Transcribe using Groq API
             print(f"Transcribing with Groq ({self.model_size})...")
             

@@ -1,31 +1,52 @@
 """
-LLM Service - Interface for local Llama 3.1 8B Instruct
-Uses Ollama for local LLM inference
+LLM Service - Interface for Groq API
+Uses Groq's llama-3.3-70b-versatile for math problem solving
 """
 
-import requests
-import json
+import os
 from typing import Dict, Any, Optional
 
+try:
+    from groq import Groq
+    GROQ_AVAILABLE = True
+except ImportError:
+    print("⚠️ Groq not installed. Install with: pip install groq")
+    GROQ_AVAILABLE = False
+    Groq = None
+
 class LLMService:
-    """Service for interacting with local Llama model via Ollama"""
+    """Service for interacting with Groq API (llama-3.3-70b-versatile)"""
     
-    def __init__(self, model_name: str = "phi3:mini", base_url: str = "http://localhost:11434"):
+    def __init__(self, model_name: str = "llama-3.3-70b-versatile", base_url: str = None):
         """
-        Initialize LLM service
+        Initialize LLM service with Groq
         
         Args:
-            model_name: Name of the Ollama model to use
-            base_url: Ollama API base URL
+            model_name: Groq model name (default: llama-3.3-70b-versatile)
+            base_url: Not used (kept for compatibility)
         """
         self.model_name = model_name
-        self.base_url = base_url
-        self.api_url = f"{base_url}/api/generate"
-        self.chat_url = f"{base_url}/api/chat"
+        
+        # Initialize Groq client
+        groq_api_key = os.getenv("GROQ_API_KEY")
+        
+        if not GROQ_AVAILABLE:
+            print("⚠️ Groq package not installed!")
+            self.client = None
+        elif not groq_api_key:
+            print("⚠️ GROQ_API_KEY not found in environment!")
+            self.client = None
+        else:
+            try:
+                self.client = Groq(api_key=groq_api_key)
+                print(f"✅ Groq LLM client initialized with model: {model_name}")
+            except Exception as e:
+                print(f"❌ Error initializing Groq client: {e}")
+                self.client = None
     
     def generate(self, prompt: str, system: Optional[str] = None, temperature: float = 0.1, max_tokens: int = 2000) -> Dict[str, Any]:
         """
-        Generate completion from prompt
+        Generate completion from prompt using Groq
         
         Args:
             prompt: User prompt
@@ -36,52 +57,42 @@ class LLMService:
         Returns:
             Dict with response and metadata
         """
-        try:
-            payload = {
-                "model": self.model_name,
-                "prompt": prompt,
-                "stream": False,
-                "options": {
-                    "temperature": temperature,
-                    "num_predict": max_tokens
-                }
-            }
-            
-            if system:
-                payload["system"] = system
-            
-            response = requests.post(self.api_url, json=payload, timeout=120)
-            
-            if response.status_code == 200:
-                result = response.json()
-                return {
-                    "text": result.get("response", ""),
-                    "success": True,
-                    "model": self.model_name
-                }
-            else:
-                return {
-                    "text": "",
-                    "success": False,
-                    "error": f"HTTP {response.status_code}: {response.text}"
-                }
-        
-        except requests.exceptions.ConnectionError:
+        if not self.client:
             return {
                 "text": "",
                 "success": False,
-                "error": "Cannot connect to Ollama. Make sure Ollama is running (ollama serve)"
+                "error": "Groq client not initialized. Check GROQ_API_KEY."
             }
+        
+        try:
+            messages = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            messages.append({"role": "user", "content": prompt})
+            
+            completion = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            
+            return {
+                "text": completion.choices[0].message.content,
+                "success": True,
+                "model": self.model_name
+            }
+        
         except Exception as e:
             return {
                 "text": "",
                 "success": False,
-                "error": str(e)
+                "error": f"Groq API error: {str(e)}"
             }
     
     def chat(self, messages: list, temperature: float = 0.1, max_tokens: int = 2000) -> Dict[str, Any]:
         """
-        Chat completion with message history
+        Chat completion with message history using Groq
         
         Args:
             messages: List of message dicts with 'role' and 'content'
@@ -91,42 +102,30 @@ class LLMService:
         Returns:
             Dict with response and metadata
         """
-        try:
-            payload = {
-                "model": self.model_name,
-                "messages": messages,
-                "stream": False,
-                "options": {
-                    "temperature": temperature,
-                    "num_predict": max_tokens
-                }
-            }
-            
-            response = requests.post(self.chat_url, json=payload, timeout=120)
-            
-            if response.status_code == 200:
-                result = response.json()
-                return {
-                    "text": result.get("message", {}).get("content", ""),
-                    "success": True,
-                    "model": self.model_name
-                }
-            else:
-                return {
-                    "text": "",
-                    "success": False,
-                    "error": f"HTTP {response.status_code}: {response.text}"
-                }
-        
-        except requests.exceptions.ConnectionError:
+        if not self.client:
             return {
                 "text": "",
                 "success": False,
-                "error": "Cannot connect to Ollama. Make sure Ollama is running (ollama serve)"
+                "error": "Groq client not initialized. Check GROQ_API_KEY."
             }
+        
+        try:
+            completion = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens
+            )
+            
+            return {
+                "text": completion.choices[0].message.content,
+                "success": True,
+                "model": self.model_name
+            }
+        
         except Exception as e:
             return {
                 "text": "",
                 "success": False,
-                "error": str(e)
+                "error": f"Groq API error: {str(e)}"
             }

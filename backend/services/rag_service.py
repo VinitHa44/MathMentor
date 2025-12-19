@@ -1,51 +1,77 @@
 """
 RAG Service - Retrieval Augmented Generation
 Handles PDF extraction, chunking, embedding, and retrieval using Pinecone
-Uses smart document-type-aware chunking strategies
+Uses Cohere free API for embeddings (lightweight, no PyTorch)
 """
 
 import os
 import json
 from typing import List, Dict, Any, Optional
 from pathlib import Path
-import numpy as np
-from sentence_transformers import SentenceTransformer
-from pinecone import Pinecone, ServerlessSpec
 from services.smart_chunker import SmartChunker, ChunkType
+
+# Use Cohere for embeddings (free API, no heavy dependencies)
+try:
+    import cohere
+    COHERE_AVAILABLE = True
+except ImportError:
+    print("⚠️ Cohere not installed. Install with: pip install cohere")
+    COHERE_AVAILABLE = False
+    cohere = None
+
+try:
+    from pinecone import Pinecone, ServerlessSpec
+    PINECONE_AVAILABLE = True
+except ImportError:
+    print("⚠️ Pinecone not installed")
+    PINECONE_AVAILABLE = False
+    Pinecone = None
+    ServerlessSpec = None
 
 try:
     from pypdf import PdfReader
+    PYPDF_AVAILABLE = True
 except ImportError:
-    print("Warning: pypdf not installed. Install with: pip install pypdf")
+    print("⚠️ pypdf not installed")
+    PYPDF_AVAILABLE = False
     PdfReader = None
 
 class RAGService:
-    """Service for RAG pipeline with smart document-type-aware chunking"""
+    """Service for RAG pipeline using Cohere free embeddings"""
     
     def __init__(self, docs_dir: str = "rag_docs", index_name: str = "math-mentor"):
         """
-        Initialize RAG service with Pinecone and smart chunker
+        Initialize RAG service with Cohere embeddings
         
         Args:
-            docs_dir: Directory containing organized documents (markdown preferred)
+            docs_dir: Directory containing organized documents
             index_name: Pinecone index name
         """
         self.docs_dir = Path(docs_dir)
         self.index_name = index_name
-        
-        # Initialize smart chunker
         self.chunker = SmartChunker()
         
-        # Initialize embedding model (local, free)
+        # Initialize Cohere client for embeddings (free tier: 100 calls/min)
         print("Loading embedding model...")
-        self.embedder = SentenceTransformer("all-MiniLM-L6-v2")
-        self.embedding_dim = 384  # all-MiniLM-L6-v2 dimension
+        cohere_api_key = os.getenv("COHERE_API_KEY", "")
+        
+        if COHERE_AVAILABLE and cohere_api_key:
+            self.embedder = cohere.Client(cohere_api_key)
+            self.embedding_dim = 1024  # embed-english-light-v3.0 dimension
+            self.embedding_model = "embed-english-light-v3.0"
+            print("✅ Using Cohere embeddings (embed-english-light-v3.0 - Free)")
+        else:
+            print("⚠️ Cohere API key not found. RAG will not work.")
+            print("Get free key at: https://dashboard.cohere.com/api-keys")
+            print("Set COHERE_API_KEY environment variable.")
+            self.embedder = None
+            self.embedding_dim = 1024
+            self.embedding_model = None
         
         # Initialize Pinecone
         api_key = os.environ.get("PINECONE_API_KEY", "")
         if not api_key:
             print("Warning: PINECONE_API_KEY not set. RAG will not work.")
-            print("Set it with: export PINECONE_API_KEY='your-api-key'")
             self.pc = None
             self.index = None
             return
@@ -275,10 +301,26 @@ class RAGService:
         print("Upserting to Pinecone...")
         print("="*60)
         
-        # Create embeddings
+        # Create embeddings using Cohere API
         texts = [chunk['text'] for chunk in chunks]
         print(f"Creating embeddings for {len(texts)} chunks...")
-        embeddings = self.embedder.encode(texts, show_progress_bar=True)
+        
+        if not self.embedder or not self.embedding_model:
+            print("❌ Embedder not available")
+            return
+        
+        # Cohere API allows batches, process in groups of 96 (API limit)
+        embeddings = []
+        batch_size = 96
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i+batch_size]
+            response = self.embedder.embed(
+                texts=batch,
+                model=self.embedding_model,
+                input_type="search_document"
+            )
+            embeddings.extend(response.embeddings)
+            print(f"  Embedded {min(i+batch_size, len(texts))}/{len(texts)} chunks")
         
         print("Preparing vectors...")
         vectors = []
@@ -340,11 +382,20 @@ class RAGService:
             List of retrieved chunks with metadata and scores
         """
         if not self.index:
-            print("Pinecone index not available. Process documents first.")
+            print("Pinecone index not available. RAG disabled.")
             return []
         
-        # Embed query
-        query_embedding = self.embedder.encode([query])
+        if not self.embedder or not self.embedding_model:
+            print("❌ Embedder not available")
+            return []
+        
+        # Embed query using Cohere API
+        response = self.embedder.embed(
+            texts=[query],
+            model=self.embedding_model,
+            input_type="search_query"
+        )
+        query_embedding = response.embeddings[0]
         
         # Build advanced filter
         filter_dict = {}

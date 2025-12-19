@@ -92,17 +92,27 @@ initialize_session_state()
 # Header
 def render_header():
     """Render the application header"""
-    col1, col2, col3 = st.columns([1, 3, 1])
-    
-    with col2:
-        st.markdown("""
-        <div style='text-align: center; padding: 1rem 0;'>
-            <h1 style='color: #1f77b4; margin: 0;'>🧮 Math Mentor</h1>
-            <p style='color: #666; font-size: 1.1rem; margin: 0.5rem 0;'>
-                Your AI-Powered Math Tutor for JEE Problems
-            </p>
+    st.markdown("""
+    <div style='text-align: center; padding: 2rem 0 3rem 0; background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%); border-radius: 20px; margin-bottom: 2rem; border: 1px solid rgba(102, 126, 234, 0.2);'>
+        <div style='display: inline-block; font-size: 4rem; margin-bottom: 1rem; animation: float 3s ease-in-out infinite;'>🧮</div>
+        <h1 style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-size: 3.5rem; font-weight: 800; margin: 0; letter-spacing: -1px;'>Math Mentor</h1>
+        <p style='color: #a8b7d1; font-size: 1.2rem; margin: 1rem 0 0 0; font-weight: 500;'>
+            ✨ Your AI-Powered Math Tutor ✨
+        </p>
+        <div style='margin-top: 1.5rem; display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;'>
+            <span style='background: rgba(102, 126, 234, 0.2); color: #667eea; padding: 0.4rem 1rem; border-radius: 20px; font-size: 0.9rem; font-weight: 600;'>📷 Image OCR</span>
+            <span style='background: rgba(102, 126, 234, 0.2); color: #667eea; padding: 0.4rem 1rem; border-radius: 20px; font-size: 0.9rem; font-weight: 600;'>🎤 Voice Input</span>
+            <span style='background: rgba(102, 126, 234, 0.2); color: #667eea; padding: 0.4rem 1rem; border-radius: 20px; font-size: 0.9rem; font-weight: 600;'>🤖 Multi-Agent AI</span>
+            <span style='background: rgba(102, 126, 234, 0.2); color: #667eea; padding: 0.4rem 1rem; border-radius: 20px; font-size: 0.9rem; font-weight: 600;'>📚 RAG Powered</span>
         </div>
-        """, unsafe_allow_html=True)
+    </div>
+    <style>
+    @keyframes float {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-10px); }
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 render_header()
 
@@ -118,16 +128,23 @@ if st.session_state.show_memory:
 else:
     # Main solver interface
     
-    # Input mode selection
-    st.markdown("## 📝 Input Your Math Problem")
+    # Input mode selection with enhanced styling
+    st.markdown("""
+    <div style='background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%); padding: 1.5rem; border-radius: 15px; margin-bottom: 2rem; border: 1px solid rgba(102, 126, 234, 0.2);'>
+        <h2 style='color: #8b9dc3; margin: 0 0 1rem 0; font-size: 1.8rem;'>📝 Input Your Math Problem</h2>
+        <p style='color: #a8b7d1; margin: 0; font-size: 1rem;'>Choose your preferred input method below 👇</p>
+    </div>
+    """, unsafe_allow_html=True)
     
-    input_mode = st.tabs(["📷 Image", "🎤 Audio", "⌨️ Text"])
+    input_mode = st.tabs(["📷 Image Upload", "🎤 Audio Recording", "⌨️ Text Input"])
     
     # IMAGE INPUT TAB
     with input_mode[0]:
         st.markdown("""
-        Upload a photo or screenshot of your math problem. The system will extract the text using OCR.
-        """)
+        <div style='padding: 1rem; background: rgba(26, 29, 36, 0.5); border-radius: 10px; border-left: 4px solid #667eea; margin-bottom: 1rem;'>
+            <p style='color: #a8b7d1; margin: 0;'>📸 Upload a photo or screenshot of your math problem. Our AI will extract the text using advanced OCR technology.</p>
+        </div>
+        """, unsafe_allow_html=True)
         
         col1, col2 = st.columns([2, 1])
         
@@ -141,7 +158,7 @@ else:
             if uploaded_image:
                 # Display uploaded image
                 image = Image.open(uploaded_image)
-                st.image(image, caption="Uploaded Image", use_column_width=True)
+                st.image(image, caption="Uploaded Image")
                 
                 # Extract text button
                 if st.button("🔍 Extract Text from Image", type="primary", use_container_width=True):
@@ -198,35 +215,42 @@ else:
     # AUDIO INPUT TAB
     with input_mode[1]:
         st.markdown("""
-        Record your math question or upload an audio file. The system will transcribe it.
-        """)
+        <div style='background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1)); 
+                    padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(102, 126, 234, 0.2); margin-bottom: 1.5rem;'>
+            <h4 style='margin: 0 0 0.5rem 0; color: #667eea;'>🎤 Voice Input</h4>
+            <div style='background: rgba(102, 126, 234, 0.05); padding: 0.8rem; border-radius: 8px; 
+                        border-left: 3px solid #667eea; font-size: 0.95rem;'>
+                <strong>📝 Tip:</strong> Record your math question or upload an audio file. The system will transcribe it.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
         
         # Tips for speaking math
-        with st.expander("💡 Tips for Speaking Math", expanded=False):
-            st.markdown("""
-            **How to speak mathematical expressions:**
+        # with st.expander("💡 Tips for Speaking Math", expanded=False):
+        #     st.markdown("""
+        #     **How to speak mathematical expressions:**
             
-            | Say This | Gets Converted To |
-            |----------|-------------------|
-            | "x raised to 3" or "x to the power 3" | x³ or x^3 |
-            | "x squared" | x² |
-            | "2 times 3" | 2 × 3 |
-            | "equals to" or "equal to" | = |
-            | "sine of theta" | sin(θ) |
-            | "derivative of x cubed" | d/dx(x³) |
-            | "square root of 16" | √16 |
+        #     | Say This | Gets Converted To |
+        #     |----------|-------------------|
+        #     | "x raised to 3" or "x to the power 3" | x³ or x^3 |
+        #     | "x squared" | x² |
+        #     | "2 times 3" | 2 × 3 |
+        #     | "equals to" or "equal to" | = |
+        #     | "sine of theta" | sin(θ) |
+        #     | "derivative of x cubed" | d/dx(x³) |
+        #     | "square root of 16" | √16 |
             
-            **Tips:**
-            - Speak clearly and at a moderate pace
-            - Say "raised to" or "to the power" for exponents
-            - Use "equals to" instead of just "is"
-            - Pronounce Greek letters by name (theta, alpha, pi, etc.)
-            - Say "with respect to x" for derivatives
+        #     **Tips:**
+        #     - Speak clearly and at a moderate pace
+        #     - Say "raised to" or "to the power" for exponents
+        #     - Use "equals to" instead of just "is"
+        #     - Pronounce Greek letters by name (theta, alpha, pi, etc.)
+        #     - Say "with respect to x" for derivatives
             
-            **Example:**
-            🎤 Say: "solve x squared plus 5x minus 3 equals 0"
-            📝 Gets: "solve x² + 5x - 3 = 0"
-            """)
+        #     **Example:**
+        #     🎤 Say: "solve x squared plus 5x minus 3 equals 0"
+        #     📝 Gets: "solve x² + 5x - 3 = 0"
+        #     """)
         
         audio_input_method = st.radio(
             "Audio Input Method",
@@ -371,7 +395,6 @@ else:
     
     # TEXT INPUT TAB
     with input_mode[2]:
-        st.markdown("Type your math problem directly below:")
         
         # Use a separate key for text input to avoid cross-contamination
         text_input = st.text_area(
@@ -798,7 +821,7 @@ else:
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("✅ Approve & Continue", type="primary", width="stretch", key="hitl_approve"):
+            if st.button("✅ Approve & Continue", type="primary", use_container_width=True, key="hitl_approve"):
                 st.success("✓ Approved! Continuing pipeline...")
                 
                 # If problem was corrected, re-solve with corrections
@@ -830,7 +853,7 @@ else:
                 st.rerun()
         
         with col2:
-            if st.button("❌ Reject & Retry", width="stretch", key="hitl_reject"):
+            if st.button("❌ Reject & Retry", use_container_width=True, key="hitl_reject"):
                 st.warning("⚠️ Rejected. Please modify the problem and try again.")
                 
                 # Store corrected problem back to extracted_text
@@ -894,8 +917,17 @@ else:
 # Footer
 st.markdown("---")
 st.markdown("""
-<div style='text-align: center; color: #666; padding: 1rem;'>
-    <p>Math Mentor v1.0 | Built with ❤️ using Streamlit, RAG, and Multi-Agent AI</p>
-    <p style='font-size: 0.9rem;'>Supports Algebra • Probability • Calculus • Linear Algebra</p>
+<div style='text-align: center; padding: 2rem 1rem; background: linear-gradient(180deg, transparent, rgba(102, 126, 234, 0.05)); 
+            border-top: 1px solid rgba(102, 126, 234, 0.2); margin-top: 3rem;'>
+    <p style='font-size: 1.1rem; margin: 0.5rem 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+              -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 600;'>
+        Math Mentor v1.0
+    </p>
+    <p style='color: #888; font-size: 0.95rem; margin: 0.5rem 0;'>
+        Built with ❤️ using Streamlit, RAG, and Multi-Agent AI
+    </p>
+    <p style='color: #999; font-size: 0.85rem; margin: 0.5rem 0;'>
+        Supports Algebra • Probability • Calculus • Linear Algebra
+    </p>
 </div>
 """, unsafe_allow_html=True)

@@ -5,10 +5,10 @@ Custom Styles for Math Mentor Streamlit App
 import streamlit as st
 
 def apply_custom_styles():
-    """Apply custom CSS styling to the Streamlit app"""
+    """Apply custom CSS styling to the Streamlit app - Dark Mode"""
     st.markdown("""
     <style>
-    /* Global Styles */
+    /* Global Styles - Dark Mode */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
     
     html, body, [class*="css"] {
@@ -18,6 +18,7 @@ def apply_custom_styles():
     /* Main Container */
     .main {
         padding: 0 2rem;
+        background-color: #0e1117;
     }
     
     /* Headers */
@@ -27,20 +28,25 @@ def apply_custom_styles():
     }
     
     h1 {
-        color: #1f77b4;
+        color: #667eea;
         margin-bottom: 0.5rem;
     }
     
     h2 {
-        color: #2c3e50;
+        color: #8b9dc3;
         border-bottom: 3px solid #667eea;
         padding-bottom: 0.5rem;
         margin-top: 2rem;
     }
     
     h3 {
-        color: #34495e;
+        color: #a8b7d1;
         margin-top: 1.5rem;
+    }
+    
+    /* Text colors */
+    p, li, span, div {
+        color: #fafafa;
     }
     
     /* Buttons */
@@ -54,7 +60,7 @@ def apply_custom_styles():
     
     .stButton > button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
     }
     
     .stButton > button[kind="primary"] {
@@ -69,7 +75,7 @@ def apply_custom_styles():
     /* Tabs */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
-        background-color: #f8f9fa;
+        background-color: #1a1d24;
         padding: 0.5rem;
         border-radius: 10px;
     }
@@ -77,14 +83,15 @@ def apply_custom_styles():
     .stTabs [data-baseweb="tab"] {
         border-radius: 8px;
         padding: 0.5rem 1.5rem;
-        background-color: white;
-        border: 1px solid #e0e0e0;
+        background-color: #262730;
+        border: 1px solid #3a3f4b;
+        color: #fafafa;
         font-weight: 600;
         transition: all 0.3s;
     }
     
     .stTabs [data-baseweb="tab"]:hover {
-        background-color: #f0f0f0;
+        background-color: #2d3139;
     }
     
     .stTabs [aria-selected="true"] {
@@ -95,8 +102,8 @@ def apply_custom_styles():
     
     /* File Uploader */
     .stFileUploader {
-        background: #f8f9fa;
-        border: 2px dashed #cbd5e0;
+        background: #1a1d24;
+        border: 2px dashed #4a5568;
         border-radius: 10px;
         padding: 1rem;
         transition: all 0.3s;
@@ -104,14 +111,16 @@ def apply_custom_styles():
     
     .stFileUploader:hover {
         border-color: #667eea;
-        background: #f0f4ff;
+        background: #1f2433;
     }
     
     /* Text Input & Text Area */
     .stTextInput > div > div > input,
     .stTextArea > div > div > textarea {
+        background-color: #262730;
         border-radius: 8px;
-        border: 2px solid #e0e0e0;
+        border: 2px solid #3a3f4b;
+        color: #fafafa;
         padding: 0.75rem;
         font-size: 1rem;
         transition: all 0.3s;
@@ -120,27 +129,31 @@ def apply_custom_styles():
     .stTextInput > div > div > input:focus,
     .stTextArea > div > div > textarea:focus {
         border-color: #667eea;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
+        background-color: #2d3139;
     }
     
     /* Selectbox */
     .stSelectbox > div > div {
+        background-color: #262730;
         border-radius: 8px;
-        border: 2px solid #e0e0e0;
+        border: 2px solid #3a3f4b;
+        color: #fafafa;
     }
     
     /* Expander */
     .streamlit-expanderHeader {
-        background-color: #f8f9fa;
+        background-color: #1a1d24;
         border-radius: 8px;
-        border: 1px solid #e0e0e0;
+        border: 1px solid #3a3f4b;
+        color: #fafafa;
         font-weight: 600;
         padding: 0.75rem 1rem;
         transition: all 0.3s;
     }
     
     .streamlit-expanderHeader:hover {
-        background-color: #e9ecef;
+        background-color: #262730;
         border-color: #667eea;
     }
     
@@ -148,13 +161,13 @@ def apply_custom_styles():
     [data-testid="stMetricValue"] {
         font-size: 2rem;
         font-weight: 700;
-        color: #1f77b4;
+        color: #667eea;
     }
     
     [data-testid="stMetricLabel"] {
         font-size: 1rem;
         font-weight: 600;
-        color: #666;
+        color: #a8b7d1;
     }
     
     /* Alert Boxes */
@@ -167,37 +180,39 @@ def apply_custom_styles():
     
     /* Success */
     .stSuccess {
-        background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
-        color: #155724;
+        background: linear-gradient(135deg, #1a3a2a 0%, #2d5a3f 100%);
+        color: #7cffb2;
     }
     
     /* Info */
     .stInfo {
-        background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%);
-        color: #0c5460;
+        background: linear-gradient(135deg, #1a2a3a 0%, #2d3f5a 100%);
+        color: #7cd4ff;
     }
     
     /* Warning */
     .stWarning {
-        background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
-        color: #856404;
+        background: linear-gradient(135deg, #3a3a1a 0%, #5a5a2d 100%);
+        color: #ffeb7c;
     }
     
     /* Error */
     .stError {
-        background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
-        color: #721c24;
+        background: linear-gradient(135deg, #3a1a1a 0%, #5a2d2d 100%);
+        color: #ff7c7c;
     }
     
     /* Multiselect */
     .stMultiSelect > div > div {
+        background-color: #262730;
         border-radius: 8px;
-        border: 2px solid #e0e0e0;
+        border: 2px solid #3a3f4b;
+        color: #fafafa;
     }
     
     /* Radio Buttons */
     .stRadio > div {
-        background: #f8f9fa;
+        background: #1a1d24;
         padding: 1rem;
         border-radius: 8px;
     }
@@ -219,17 +234,18 @@ def apply_custom_styles():
     
     /* Code Blocks */
     .stCodeBlock {
-        background: #f8f9fa;
+        background: #1a1d24;
         border-radius: 8px;
-        border: 1px solid #e0e0e0;
+        border: 1px solid #3a3f4b;
     }
     
     /* JSON Display */
     .stJson {
-        background: #f8f9fa;
+        background: #1a1d24;
         border-radius: 8px;
         padding: 1rem;
-        border: 1px solid #e0e0e0;
+        border: 1px solid #3a3f4b;
+        color: #fafafa;
     }
     
     /* Columns */
@@ -241,7 +257,7 @@ def apply_custom_styles():
     .stImage {
         border-radius: 10px;
         overflow: hidden;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
     }
     
     /* Audio */
@@ -266,17 +282,19 @@ def apply_custom_styles():
     
     /* Custom Card */
     .custom-card {
-        background: white;
+        background: #262730;
         border-radius: 12px;
         padding: 1.5rem;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
         margin: 1rem 0;
         transition: all 0.3s;
+        border: 1px solid #3a3f4b;
     }
     
     .custom-card:hover {
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+        box-shadow: 0 4px 16px rgba(102, 126, 234, 0.3);
         transform: translateY(-4px);
+        border-color: #667eea;
     }
     
     /* Animations */
@@ -302,7 +320,7 @@ def apply_custom_styles():
     }
     
     ::-webkit-scrollbar-track {
-        background: #f1f1f1;
+        background: #1a1d24;
         border-radius: 10px;
     }
     
@@ -333,8 +351,8 @@ def apply_custom_styles():
     .tooltip .tooltiptext {
         visibility: hidden;
         width: 200px;
-        background-color: #555;
-        color: #fff;
+        background-color: #262730;
+        color: #fafafa;
         text-align: center;
         border-radius: 6px;
         padding: 5px;
@@ -392,23 +410,23 @@ def apply_custom_styles():
     }
     
     .badge-success {
-        background: #d4edda;
-        color: #155724;
+        background: #1a3a2a;
+        color: #7cffb2;
     }
     
     .badge-warning {
-        background: #fff3cd;
-        color: #856404;
+        background: #3a3a1a;
+        color: #ffeb7c;
     }
     
     .badge-danger {
-        background: #f8d7da;
-        color: #721c24;
+        background: #3a1a1a;
+        color: #ff7c7c;
     }
     
     .badge-info {
-        background: #d1ecf1;
-        color: #0c5460;
+        background: #1a2a3a;
+        color: #7cd4ff;
     }
     
     .badge-primary {
@@ -439,20 +457,20 @@ def apply_custom_styles():
 
 
 def get_color_palette():
-    """Return the app's color palette"""
+    """Return the app's color palette - Dark Mode"""
     return {
         'primary': '#667eea',
         'secondary': '#764ba2',
-        'success': '#28a745',
-        'warning': '#ffc107',
-        'danger': '#dc3545',
-        'info': '#17a2b8',
-        'light': '#f8f9fa',
-        'dark': '#343a40',
-        'background': '#ffffff',
-        'text_primary': '#2c3e50',
-        'text_secondary': '#7f8c8d',
-        'border': '#e0e0e0'
+        'success': '#7cffb2',
+        'warning': '#ffeb7c',
+        'danger': '#ff7c7c',
+        'info': '#7cd4ff',
+        'light': '#262730',
+        'dark': '#0e1117',
+        'background': '#0e1117',
+        'text_primary': '#fafafa',
+        'text_secondary': '#a8b7d1',
+        'border': '#3a3f4b'
     }
 
 

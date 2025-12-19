@@ -31,15 +31,15 @@ def render_confidence_indicator(confidence: float, label: str = "Confidence"):
         status = "Low"
     
     st.markdown(f"""
-    <div style='padding: 0.75rem; background: linear-gradient(135deg, {color}22, {color}11); 
+    <div style='padding: 0.75rem; background: linear-gradient(135deg, {color}33, {color}22); 
                 border-left: 4px solid {color}; border-radius: 8px; margin: 1rem 0;'>
         <div style='display: flex; justify-content: space-between; align-items: center;'>
-            <span style='font-weight: 600; color: #333;'>{emoji} {label}</span>
+            <span style='font-weight: 600; color: #fafafa;'>{emoji} {label}</span>
             <span style='font-size: 1.2rem; font-weight: bold; color: {color};'>
-                {confidence_percent:.1f}% <span style='font-size: 0.9rem; color: #666;'>({status})</span>
+                {confidence_percent:.1f}% <span style='font-size: 0.9rem; color: #a8b7d1;'>({status})</span>
             </span>
         </div>
-        <div style='margin-top: 0.5rem; background: #f0f0f0; height: 8px; border-radius: 4px; overflow: hidden;'>
+        <div style='margin-top: 0.5rem; background: rgba(255,255,255,0.1); height: 8px; border-radius: 4px; overflow: hidden;'>
             <div style='background: {color}; height: 100%; width: {confidence_percent}%; transition: width 0.3s;'></div>
         </div>
     </div>
@@ -210,16 +210,25 @@ def render_solution_card(solution: Dict[str, Any]):
         for i, step in enumerate(steps, 1):
             # Handle both string format and dict format
             if isinstance(step, str):
-                step_content = step
-                st.markdown(f"**Step {i}:**")
-                st.markdown(step_content)
+                step_content = step.strip()
+                # Skip if step content is redundant header or contains HTML tags
+                if step_content and not step_content.startswith('<') and f'Step {i}:' not in step_content:
+                    st.markdown(f"**Step {i}:**")
+                    st.markdown(step_content)
             else:
                 step_num = step.get('step_number', i)
-                description = step.get('description', '')
-                content = step.get('content', '')
+                description = step.get('description', '').strip()
+                content = step.get('content', '').strip()
                 
-                st.markdown(f"**Step {step_num}: {description}**")
-                st.markdown(content)
+                # Skip redundant "Step N: Step N" patterns
+                if description and description.lower() != f"step {step_num}":
+                    st.markdown(f"**Step {step_num}: {description}**")
+                elif content:
+                    st.markdown(f"**Step {step_num}:**")
+                
+                # Only show content if it's not redundant
+                if content and content.lower() != description.lower():
+                    st.markdown(content)
             
             # Add visual separator between steps
             if i < len(steps):
@@ -233,8 +242,12 @@ def render_feedback_section():
     import streamlit as st
     import requests
     
-    st.markdown("### 💬 Feedback")
-    st.markdown("Help us improve by providing feedback:")
+    st.markdown("""
+    <div style='background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1)); 
+                padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(102, 126, 234, 0.2); margin: 1.5rem 0;'>
+        <h3 style='margin: 0 0 0.5rem 0; color: #667eea;'>💬 How was this solution?</h3>
+        <p style='color: #a8b7d1; margin: 0 0 1rem 0;'>Help us improve by providing feedback:</p>
+    """, unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns(3)
     
@@ -293,6 +306,8 @@ def render_feedback_section():
                     st.error(f"Failed to submit feedback: {e}")
             else:
                 st.warning("No problem ID found. Solve a problem first.")
+    
+    st.markdown("</div>", unsafe_allow_html=True)
     
     # Correction form
     if st.session_state.get('show_correction_form', False):
