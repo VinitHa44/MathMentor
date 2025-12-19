@@ -42,6 +42,13 @@ class SolverAgent:
         Returns:
             Solution with steps, answer, and metadata
         """
+        # Try symbolic algebra solver for algebra problems
+        if topic.lower() == "algebra":
+            symbolic_result = self._solve_algebra_symbolic(problem_text)
+            if symbolic_result.get('success', False):
+                return symbolic_result
+            # If symbolic solving fails, continue to LLM solver
+        
         # Try strict format for simple probability, fallback to LLM if it fails
         if topic.lower() == "probability" and self._is_simple_probability(problem_text):
             simple_result = self._solve_simple_probability(problem_text)
@@ -71,6 +78,131 @@ class SolverAgent:
         no_multi_stage = 'without replacement' not in problem_lower
         
         return is_conditional or (single_event and simple_object and no_multi_stage)
+    
+    def _solve_algebra_symbolic(self, problem_text: str) -> Dict[str, Any]:
+        """
+        Solve algebra problems using SymPy symbolic computation
+        Handles linear equations, quadratic equations, systems of equations
+        """
+        try:
+            from sympy import symbols, Eq, solve, sympify, simplify
+            from sympy.parsing.sympy_parser import parse_expr
+            import re
+            
+            # Extract equation pattern
+            # Pattern 1: "If 3x = 6x - 15, then x + 8 = ?"
+            # Pattern 2: "Solve: 2x + 5 = 15"
+            # Pattern 3: "Solve for x in 3x = 6x - 15"
+            # Pattern 4: "Find x if x^2 - 5x + 6 = 0"
+            
+            # Look for main equation (before "then" or "find" or at the end)
+            problem_lower = problem_text.lower()
+            
+            # Extract the equation to solve
+            equation_text = None
+            query_expr = None  # What we need to evaluate after solving
+            
+            # Pattern: "If [equation], then [expression] = ?"
+            if_then_match = re.search(r'if\s+([^,]+),\s*then\s+([^=?]+)', problem_text, re.IGNORECASE)
+            if if_then_match:
+                equation_text = if_then_match.group(1).strip()
+                query_expr = if_then_match.group(2).strip()
+            # Pattern: "Solve for [var] in [equation]"
+            elif 'solve for' in problem_lower and ' in ' in problem_lower:
+                solve_for_match = re.search(r'solve\s+for\s+\w+\s+in\s+(.+)', problem_text, re.IGNORECASE)
+                if solve_for_match:
+                    equation_text = solve_for_match.group(1).strip()
+            else:
+                # Pattern: "Solve: [equation]" or just "[equation]"
+                solve_match = re.search(r'(?:solve[:\s]+)?([^.!?]+[=][^.!?]+)', problem_text, re.IGNORECASE)
+                if solve_match:
+                    equation_text = solve_match.group(1).strip()
+            
+            if not equation_text:
+                return {"success": False, "error": "Could not extract equation"}
+            
+            # Clean equation text
+            equation_text = equation_text.replace('×', '*').replace('÷', '/')
+            
+            # Parse equation into left and right sides
+            if '=' not in equation_text:
+                return {"success": False, "error": "No equals sign found"}
+            
+            left_str, right_str = equation_text.split('=', 1)
+            left_str = left_str.strip()
+            right_str = right_str.strip()
+            
+            # Detect variables (usually x, y, z)
+            var_candidates = set(re.findall(r'\b([a-z])\b', equation_text.lower()))
+            if not var_candidates:
+                return {"success": False, "error": "No variables detected"}
+            
+            # Use the most common variable (usually 'x')
+            var_name = 'x' if 'x' in var_candidates else list(var_candidates)[0]
+            var = symbols(var_name)
+            
+            # Parse expressions
+            try:
+                left_expr = parse_expr(left_str, transformations='all')
+                right_expr = parse_expr(right_str, transformations='all')
+            except:
+                # Fallback: use sympify
+                left_expr = sympify(left_str)
+                right_expr = sympify(right_str)
+            
+            # Create equation
+            equation = Eq(left_expr, right_expr)
+            
+            # Solve equation
+            solution = solve(equation, var)
+            
+            if not solution:
+                return {"success": False, "error": "No solution found"}
+            
+            # Get the solution value
+            if isinstance(solution, list):
+                x_value = solution[0]
+            else:
+                x_value = solution
+            
+            # Build steps
+            steps = [
+                f"Original equation: {left_str} = {right_str}",
+                f"Rearranging: {left_expr} - ({right_expr}) = 0",
+                f"Simplifying: {simplify(left_expr - right_expr)} = 0",
+                f"Solution: {var_name} = {x_value}"
+            ]
+            
+            # If there's a query expression, evaluate it
+            final_answer = str(x_value)
+            if query_expr:
+                try:
+                    query_clean = query_expr.replace('×', '*').replace('÷', '/')
+                    query_parsed = parse_expr(query_clean, transformations='all')
+                    result_value = query_parsed.subs(var, x_value)
+                    result_simplified = simplify(result_value)
+                    steps.append(f"Evaluating {query_expr}: {query_parsed.subs(var, x_value)} = {result_simplified}")
+                    final_answer = str(result_simplified)
+                except Exception as e:
+                    # If evaluation fails, just return x value
+                    pass
+            
+            return {
+                "success": True,
+                "solution_text": f"Solved using symbolic algebra (SymPy)",
+                "steps": steps,
+                "final_answer": final_answer,
+                "context_used": 0,
+                "topic": "Algebra",
+                "method": "symbolic_computation"
+            }
+            
+        except Exception as e:
+            # If symbolic solving fails, return error to fallback to LLM
+            return {
+                "success": False,
+                "error": f"Symbolic solver failed: {str(e)}"
+            }
     
     def _solve_simple_probability(self, problem_text: str) -> Dict[str, Any]:
         """Solve simple probability with strict format"""

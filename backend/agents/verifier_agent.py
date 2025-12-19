@@ -38,6 +38,12 @@ class VerifierAgent:
         Returns:
             Verification result with correctness, issues, suggestions
         """
+        # Try algebraic verification for algebra problems
+        if topic.lower() == "algebra":
+            algebra_result = self._verify_algebra_substitution(problem_text, final_answer)
+            if algebra_result:
+                return algebra_result
+        
         # Try rule-based verification first for deterministic topics
         if topic.lower() == "probability":
             rule_result = self._verify_probability(problem_text, solution_text, final_answer)
@@ -46,6 +52,113 @@ class VerifierAgent:
         
         # Fall back to LLM-based verification for complex cases
         return self._verify_with_llm(problem_text, solution_text, final_answer, topic, retrieved_context)
+    
+    def _verify_algebra_substitution(self, problem_text: str, final_answer: str) -> Dict[str, Any]:
+        """
+        Verify algebra solutions by substituting answer back into equation
+        """
+        try:
+            from sympy import symbols, Eq, sympify, simplify
+            from sympy.parsing.sympy_parser import parse_expr
+            import re
+            
+            # Extract the main equation from problem
+            problem_lower = problem_text.lower()
+            
+            # Pattern: "If [equation], then [expression] = ?"
+            if_then_match = re.search(r'if\s+([^,]+),\s*then\s+([^=?]+)', problem_text, re.IGNORECASE)
+            
+            if if_then_match:
+                equation_text = if_then_match.group(1).strip()
+                query_expr_text = if_then_match.group(2).strip()
+                
+                # Clean equation
+                equation_text = equation_text.replace('×', '*').replace('÷', '/')
+                
+                # Parse equation
+                if '=' not in equation_text:
+                    return None
+                
+                left_str, right_str = equation_text.split('=', 1)
+                left_str = left_str.strip()
+                right_str = right_str.strip()
+                
+                # Detect variable
+                var_candidates = set(re.findall(r'\b([a-z])\b', equation_text.lower()))
+                if not var_candidates:
+                    return None
+                
+                var_name = 'x' if 'x' in var_candidates else list(var_candidates)[0]
+                var = symbols(var_name)
+                
+                # Parse expressions
+                try:
+                    left_expr = parse_expr(left_str, transformations='all')
+                    right_expr = parse_expr(right_str, transformations='all')
+                except:
+                    left_expr = sympify(left_str)
+                    right_expr = sympify(right_str)
+                
+                # First, solve to find the correct x value
+                equation = Eq(left_expr, right_expr)
+                from sympy import solve
+                solution = solve(equation, var)
+                
+                if not solution:
+                    return None
+                
+                if isinstance(solution, list):
+                    correct_x = solution[0]
+                else:
+                    correct_x = solution
+                
+                # Now evaluate the query expression with correct x
+                query_clean = query_expr_text.replace('×', '*').replace('÷', '/')
+                query_parsed = parse_expr(query_clean, transformations='all')
+                correct_answer = simplify(query_parsed.subs(var, correct_x))
+                
+                # Compare with provided answer
+                try:
+                    provided_answer = sympify(final_answer.strip())
+                    is_correct = simplify(provided_answer - correct_answer) == 0
+                except:
+                    # If can't parse provided answer, compare as strings
+                    is_correct = str(correct_answer) == final_answer.strip()
+                
+                if is_correct:
+                    return {
+                        "success": True,
+                        "is_correct": True,
+                        "confidence": 1.0,
+                        "issues": [],
+                        "suggestions": [],
+                        "verification_text": f"Verified by substitution: {var_name} = {correct_x}, {query_expr_text} = {correct_answer}",
+                        "needs_human_review": False
+                    }
+                else:
+                    return {
+                        "success": True,
+                        "is_correct": False,
+                        "confidence": 1.0,
+                        "issues": [
+                            f"Incorrect answer. Expected {correct_answer}, got {final_answer}",
+                            f"Equation {equation_text} solves to {var_name} = {correct_x}",
+                            f"Therefore {query_expr_text} = {correct_answer}"
+                        ],
+                        "suggestions": [
+                            f"Solve the equation {left_str} = {right_str} to get {var_name} = {correct_x}",
+                            f"Then substitute into {query_expr_text} to get {correct_answer}"
+                        ],
+                        "verification_text": f"Substitution check failed. Correct answer is {correct_answer}",
+                        "needs_human_review": False
+                    }
+            
+            # If pattern doesn't match, return None to try other methods
+            return None
+            
+        except Exception as e:
+            # If verification fails, return None to fallback to LLM
+            return None
     
     def _verify_probability(self, problem_text: str, solution_text: str, final_answer: str) -> Dict[str, Any]:
         """Rule-based verification for probability problems"""
@@ -157,54 +270,73 @@ class VerifierAgent:
         # Build context section
         context_text = self._format_context(retrieved_context)
         
-        # Build verifier prompt
-        system_prompt = """You are an expert math verifier checking JEE-level solutions.
+        # Build verifier prompt with explicit substitution check
+        system_prompt = """You are a CRITICAL math verifier for JEE-level problems. Your job is to find errors.
 
-VERIFICATION CHECKLIST:
+MANDATORY VERIFICATION STEPS FOR ALGEBRA:
+1. **Extract the original equation** from the problem
+2. **Solve it step-by-step yourself** to find the correct value
+3. **Substitute the claimed answer back** into the original equation
+4. **Check if both sides are equal** - if not, the answer is WRONG
+
+VERIFICATION CHECKLIST (ALL topics):
 1. Formula correctness (check against retrieved context)
-2. Calculation accuracy
-3. Domain constraints (e.g., x > 0 for √x)
-4. Edge cases handling
-5. Logical flow
-6. Final answer correctness
+2. Calculation accuracy - recalculate each step
+3. Substitution verification - does the answer satisfy the equation?
+4. Domain constraints (e.g., x > 0 for √x)
+5. Edge cases handling
+6. Logical flow
+7. Units and reasonableness
 
-OUTPUT FORMAT:
-- Is Correct: Yes/No
-- Confidence: 0-100%
-- Issues Found: List any problems
-- Suggestions: How to fix issues
+BE SKEPTICAL. If you find ANY error, mark as incorrect.
 
-Be thorough but fair."""
+OUTPUT FORMAT (strict):
+Is Correct: Yes/No
+Confidence: 0-100%
+Issues Found: [list any problems, be specific]
+Suggestions: [how to fix]
 
-        user_prompt = f"""Verify this solution:
+If you cannot verify with 100% certainty, state that clearly."""
+
+        user_prompt = f"""Verify this solution CRITICALLY:
 
 **Problem:** {problem_text}
 
-**Solution:**
+**Claimed Solution:**
 {solution_text}
 
-**Final Answer:** {final_answer}
+**Claimed Final Answer:** {final_answer}
 
 **Topic:** {topic}
 
 **Retrieved Context (for formula checking):**
 {context_text}
 
-**Your Task:**
-Check if the solution is correct. Look for:
-- Wrong formulas
-- Calculation errors
-- Missing constraints
-- Logical errors
+**CRITICAL VERIFICATION TASK:**
 
-Provide your verification:"""
+FOR ALGEBRA PROBLEMS:
+1. Extract the equation from the problem
+2. Solve it yourself step-by-step
+3. Substitute the claimed answer back into the original equation
+4. Check if both sides are equal
+5. If they're not equal, the answer is WRONG
+
+FOR ALL PROBLEMS:
+- Recalculate every step
+- Check formulas against context
+- Verify units and constraints
+- Look for calculation errors
+
+**Be thorough. If anything seems wrong, mark it as incorrect.**
+
+Your verification:"""
 
         # Generate verification
         try:
             response = self.llm.generate(
                 prompt=user_prompt,
                 system=system_prompt,
-                temperature=0.2,  # Very low for consistent checking
+                temperature=0.1,  # Very low for consistent checking
                 max_tokens=1500
             )
             
@@ -220,6 +352,9 @@ Provide your verification:"""
             # Convert confidence from 0-100 to 0-1 range
             confidence_normalized = confidence / 100.0 if confidence > 1 else confidence
             
+            # Lower confidence threshold - if verifier is unsure, mark for review
+            needs_review = not is_correct or confidence_normalized < 0.85
+            
             return {
                 "success": True,
                 "is_correct": is_correct,
@@ -227,7 +362,7 @@ Provide your verification:"""
                 "issues": issues,
                 "suggestions": suggestions,
                 "verification_text": response_text,
-                "needs_human_review": not is_correct or confidence_normalized < 0.80
+                "needs_human_review": needs_review
             }
         
         except Exception as e:

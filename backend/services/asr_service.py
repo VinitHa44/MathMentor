@@ -10,6 +10,7 @@ import shutil
 import subprocess
 from typing import Dict, Any
 import numpy as np
+from utils.math_speech_converter import MathSpeechConverter
 
 class ASRService:
     """Service for transcribing audio to text"""
@@ -23,6 +24,7 @@ class ASRService:
         """
         self.model_size = model_size
         self.ffmpeg_available = self._check_ffmpeg()
+        self.math_converter = MathSpeechConverter()
         
         if not self.ffmpeg_available:
             print("⚠️ WARNING: FFmpeg not found in system PATH!")
@@ -127,19 +129,21 @@ class ASRService:
             else:
                 avg_confidence = 0.8  # Default confidence if no segments
             
-            # Clean math-specific text
-            cleaned_text = self._clean_math_speech(text)
+            # Convert spoken math to mathematical notation
+            converted_text = self.math_converter.convert(text)
             
             # If no text found
-            if not cleaned_text.strip():
-                cleaned_text = "No speech detected in audio. Please ensure audio is clear."
+            if not converted_text.strip():
+                converted_text = "No speech detected in audio. Please ensure audio is clear."
                 avg_confidence = 0.0
             
             return {
-                "text": cleaned_text,
+                "text": converted_text,
+                "original_transcript": text,  # Keep original for reference
                 "confidence": round(avg_confidence, 2),
                 "provider": "whisper",
-                "language": result.get("language", "en")
+                "language": result.get("language", "en"),
+                "math_notation_applied": text.lower() != converted_text.lower()
             }
         
         except Exception as e:
@@ -150,51 +154,6 @@ class ASRService:
                 "error": str(e),
                 "provider": "whisper"
             }
-    
-    def _clean_math_speech(self, text: str) -> str:
-        """
-        Clean and normalize math-specific speech patterns
-        
-        Args:
-            text: Raw transcribed text
-        
-        Returns:
-            Cleaned text with math notation
-        """
-        # Common math phrase replacements
-        replacements = {
-            "square root of": "√",
-            "squared": "²",
-            "cubed": "³",
-            "to the power of": "^",
-            "raised to": "^",
-            "divided by": "÷",
-            "times": "×",
-            "multiplied by": "×",
-            "plus": "+",
-            "minus": "-",
-            "equals": "=",
-            "equal to": "=",
-            "greater than": ">",
-            "less than": "<",
-            "pi": "π",
-            "theta": "θ",
-            "alpha": "α",
-            "beta": "β",
-            "gamma": "γ",
-            "delta": "Δ",
-            "integral of": "∫",
-            "summation of": "∑",
-            "limit as": "lim",
-            "derivative of": "d/dx",
-            "del": "∂",
-        }
-        
-        text_lower = text.lower()
-        for phrase, symbol in replacements.items():
-            text_lower = text_lower.replace(phrase, symbol)
-        
-        return text_lower
     
     def enhance_audio(self, audio_data: bytes) -> bytes:
         """

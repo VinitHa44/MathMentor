@@ -45,6 +45,7 @@ python-dateutil==2.9.0
 orjson==3.10.7
 loguru==0.7.2
 ollama
+sympy==1.12  # Symbolic mathematics for algebra solving
 
 # RAG Pipeline
 pypdf==4.3.1

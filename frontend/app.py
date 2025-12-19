@@ -201,6 +201,33 @@ else:
         Record your math question or upload an audio file. The system will transcribe it.
         """)
         
+        # Tips for speaking math
+        with st.expander("💡 Tips for Speaking Math", expanded=False):
+            st.markdown("""
+            **How to speak mathematical expressions:**
+            
+            | Say This | Gets Converted To |
+            |----------|-------------------|
+            | "x raised to 3" or "x to the power 3" | x³ or x^3 |
+            | "x squared" | x² |
+            | "2 times 3" | 2 × 3 |
+            | "equals to" or "equal to" | = |
+            | "sine of theta" | sin(θ) |
+            | "derivative of x cubed" | d/dx(x³) |
+            | "square root of 16" | √16 |
+            
+            **Tips:**
+            - Speak clearly and at a moderate pace
+            - Say "raised to" or "to the power" for exponents
+            - Use "equals to" instead of just "is"
+            - Pronounce Greek letters by name (theta, alpha, pi, etc.)
+            - Say "with respect to x" for derivatives
+            
+            **Example:**
+            🎤 Say: "solve x squared plus 5x minus 3 equals 0"
+            📝 Gets: "solve x² + 5x - 3 = 0"
+            """)
+        
         audio_input_method = st.radio(
             "Audio Input Method",
             ["🎙️ Record Audio", "📁 Upload Audio File"],
@@ -246,6 +273,8 @@ else:
                                     result = response.json()
                                     st.session_state.extracted_text = result["text"]
                                     st.session_state.asr_confidence = result["confidence"]
+                                    st.session_state.asr_original = result.get("original_transcript", result["text"])
+                                    st.session_state.math_notation_applied = result.get("math_notation_applied", False)
                                     st.session_state.needs_review = True  # ASR text needs review
                                     # Increment problem counter to force text area refresh
                                     st.session_state.problem_counter += 1
@@ -255,6 +284,16 @@ else:
                                     st.session_state.feedback_submitted = False
                                     st.success(f"✅ Transcribed: {result['text'][:100]}...")
                                     st.info(f"Confidence: {result['confidence']:.2%}")
+                                    
+                                    # Show math notation conversion info
+                                    if st.session_state.math_notation_applied:
+                                        with st.expander("🔢 Math Notation Conversion Applied", expanded=False):
+                                            st.markdown("**Original Speech:**")
+                                            st.code(st.session_state.asr_original, language=None)
+                                            st.markdown("**Converted to Math Notation:**")
+                                            st.code(result["text"], language=None)
+                                            st.info("✨ Spoken math phrases were automatically converted to mathematical notation")
+                                    
                                     st.rerun()
                                 else:
                                     st.error(f"Transcription failed: {response.json().get('detail', 'Unknown error')}")
@@ -296,6 +335,8 @@ else:
                                 result = response.json()
                                 st.session_state.extracted_text = result["text"]
                                 st.session_state.asr_confidence = result["confidence"]
+                                st.session_state.asr_original = result.get("original_transcript", result["text"])
+                                st.session_state.math_notation_applied = result.get("math_notation_applied", False)
                                 st.session_state.needs_review = True  # ASR text needs review
                                 # Increment problem counter to force text area refresh
                                 st.session_state.problem_counter += 1
@@ -305,6 +346,16 @@ else:
                                 st.session_state.feedback_submitted = False
                                 st.success(f"✅ Transcribed: {result['text'][:100]}...")
                                 st.info(f"Confidence: {result['confidence']:.2%}")
+                                
+                                # Show math notation conversion info
+                                if st.session_state.math_notation_applied:
+                                    with st.expander("🔢 Math Notation Conversion Applied", expanded=False):
+                                        st.markdown("**Original Speech:**")
+                                        st.code(st.session_state.asr_original, language=None)
+                                        st.markdown("**Converted to Math Notation:**")
+                                        st.code(result["text"], language=None)
+                                        st.info("✨ Spoken math phrases were automatically converted to mathematical notation")
+                                
                                 st.rerun()
                             else:
                                 st.error(f"Transcription failed: {response.json().get('detail', 'Unknown error')}")
