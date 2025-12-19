@@ -267,74 +267,79 @@ else:
         if audio_input_method == "🎙️ Record Audio":
             if not AUDIO_RECORDER_AVAILABLE:
                 st.info("📌 Audio recording from browser is not available in this deployment. Please use the '📁 Upload Audio File' option below to transcribe pre-recorded audio files.")
+                # Show upload file option instead
             else:
-                st.info("🎤 Click the button below to start/stop recording")
-                
-                # Audio recorder component
-                audio_bytes = audio_recorder(
-                    text="",
-                    recording_color="#e74c3c",
-                    neutral_color="#3498db",
-                    icon_name="microphone",
-                    icon_size="3x"
-                )
-                
-                if audio_bytes:
-                    st.success("✅ Recording captured!")
+                try:
+                    st.info("🎤 Click the button below to start/stop recording")
                     
-                    # Play back the recorded audio
-                    st.audio(audio_bytes, format="audio/wav")
+                    # Audio recorder component
+                    audio_bytes = audio_recorder(
+                        text="",
+                        recording_color="#e74c3c",
+                        neutral_color="#3498db",
+                        icon_name="microphone",
+                        icon_size="3x"
+                    )
                     
-                    if st.button("🎯 Transcribe Recording", type="primary", key="transcribe_recording"):
-                        with st.spinner("Transcribing audio..."):
-                            try:
-                                # Convert audio to base64
-                                audio_str = base64.b64encode(audio_bytes).decode()
-                                
-                                # Call backend ASR API
-                                response = requests.post(
-                                    f"{API_BASE_URL}/api/transcribe",
-                                    json={"audio_base64": audio_str, "filename": "recording.wav"},
-                                    timeout=st.session_state.request_timeout
-                                )
-                                
-                                if response.status_code == 200:
-                                    result = response.json()
-                                    st.session_state.extracted_text = result["text"]
-                                    st.session_state.asr_confidence = result["confidence"]
-                                    st.session_state.asr_original = result.get("original_transcript", result["text"])
-                                    st.session_state.math_notation_applied = result.get("math_notation_applied", False)
-                                    st.session_state.needs_review = True  # ASR text needs review
-                                    # Increment problem counter to force text area refresh
-                                    st.session_state.problem_counter += 1
-                                    # Clear previous solution and agent trace
-                                    st.session_state.solution = None
-                                    st.session_state.agent_trace = []
-                                    st.session_state.feedback_submitted = False
-                                    st.success(f"✅ Transcribed: {result['text'][:100]}...")
-                                    st.info(f"Confidence: {result['confidence']:.2%}")
+                    if audio_bytes:
+                        st.success("✅ Recording captured!")
+                        
+                        # Play back the recorded audio
+                        st.audio(audio_bytes, format="audio/wav")
+                        
+                        if st.button("🎯 Transcribe Recording", type="primary", key="transcribe_recording"):
+                            with st.spinner("Transcribing audio..."):
+                                try:
+                                    # Convert audio to base64
+                                    audio_str = base64.b64encode(audio_bytes).decode()
                                     
-                                    # Show math notation conversion info
-                                    if st.session_state.math_notation_applied:
-                                        with st.expander("🔢 Math Notation Conversion Applied", expanded=False):
-                                            st.markdown("**Original Speech:**")
-                                            st.code(st.session_state.asr_original, language=None)
-                                            st.markdown("**Converted to Math Notation:**")
-                                            st.code(result["text"], language=None)
-                                            st.info("✨ Spoken math phrases were automatically converted to mathematical notation")
+                                    # Call backend ASR API
+                                    response = requests.post(
+                                        f"{API_BASE_URL}/api/transcribe",
+                                        json={"audio_base64": audio_str, "filename": "recording.wav"},
+                                        timeout=st.session_state.request_timeout
+                                    )
                                     
-                                    st.rerun()
-                                else:
-                                    st.error(f"Transcription failed: {response.json().get('detail', 'Unknown error')}")
-                            except requests.exceptions.Timeout:
-                                st.error("❌ Transcription request timed out. Try again or use a shorter recording.")
-                            except requests.exceptions.ConnectionError as e:
-                                st.error(f"❌ Cannot connect to backend: {str(e)}")
-                                st.error("Make sure backend is running on http://localhost:8000")
-                            except requests.exceptions.RequestException as e:
-                                st.error(f"❌ Transcription request failed: {str(e)}")
-                            except Exception as e:
-                                st.error(f"❌ Unexpected error: {type(e).__name__}: {str(e)}")
+                                    if response.status_code == 200:
+                                        result = response.json()
+                                        st.session_state.extracted_text = result["text"]
+                                        st.session_state.asr_confidence = result["confidence"]
+                                        st.session_state.asr_original = result.get("original_transcript", result["text"])
+                                        st.session_state.math_notation_applied = result.get("math_notation_applied", False)
+                                        st.session_state.needs_review = True  # ASR text needs review
+                                        # Increment problem counter to force text area refresh
+                                        st.session_state.problem_counter += 1
+                                        # Clear previous solution and agent trace
+                                        st.session_state.solution = None
+                                        st.session_state.agent_trace = []
+                                        st.session_state.feedback_submitted = False
+                                        st.success(f"✅ Transcribed: {result['text'][:100]}...")
+                                        st.info(f"Confidence: {result['confidence']:.2%}")
+                                        
+                                        # Show math notation conversion info
+                                        if st.session_state.math_notation_applied:
+                                            with st.expander("🔢 Math Notation Conversion Applied", expanded=False):
+                                                st.markdown("**Original Speech:**")
+                                                st.code(st.session_state.asr_original, language=None)
+                                                st.markdown("**Converted to Math Notation:**")
+                                                st.code(result["text"], language=None)
+                                                st.info("✨ Spoken math phrases were automatically converted to mathematical notation")
+                                        
+                                        st.rerun()
+                                    else:
+                                        st.error(f"Transcription failed: {response.json().get('detail', 'Unknown error')}")
+                                except requests.exceptions.Timeout:
+                                    st.error("❌ Transcription request timed out. Try again or use a shorter recording.")
+                                except requests.exceptions.ConnectionError as e:
+                                    st.error(f"❌ Cannot connect to backend: {str(e)}")
+                                    st.error("Make sure backend is running on http://localhost:8000")
+                                except requests.exceptions.RequestException as e:
+                                    st.error(f"❌ Transcription request failed: {str(e)}")
+                                except Exception as e:
+                                    st.error(f"❌ Unexpected error: {type(e).__name__}: {str(e)}")
+                except Exception as e:
+                    st.error(f"❌ Audio recorder error: {str(e)}")
+                    st.info("Please use the '📁 Upload Audio File' option instead.")
         
         else:
             uploaded_audio = st.file_uploader(
