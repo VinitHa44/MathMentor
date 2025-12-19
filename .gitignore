@@ -123,3 +123,10 @@ dist/
 build/
 *.egg-info/
 docker-compose.override.yml
+
+# =========================
+# Project Specific
+# =========================
+.github/
+memory_store/
+backend/memory_store/

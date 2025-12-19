@@ -76,8 +76,8 @@ Math Mentor is a comprehensive AI-powered math tutoring system that combines:
         └─────────────────────────────────────────┘
                           ▼
         ┌─────────────────────────────────────────┐
-        │      LLM Backends (Ollama)       │
-        │      Vector DB (Pinecone)         │
+        │ LLM (Groq Llama 3.3 70B Versatile) │
+        │      Vector DB (Pinecone)          │
         └─────────────────────────────────────────┘
 ```
 
@@ -88,7 +88,7 @@ Math Mentor is a comprehensive AI-powered math tutoring system that combines:
 - **Python**: 3.9 or higher
 - **Tesseract OCR**: For image text extraction
 - **FFmpeg**: For audio processing
-- **Ollama** (optional): For local LLM inference
+- **Groq API Key**: For LLM (Llama 3.3 70B) and Whisper ASR
 
 ### Installation
 
@@ -133,16 +133,16 @@ brew install tesseract ffmpeg
 5. **Configure environment variables**:
 ```bash
 # Create .env file at root
+GROQ_API_KEY=your_groq_key  # For Llama 3.3 70B (LLM) and Whisper (ASR)
 PINECONE_API_KEY=your_pinecone_key
 COHERE_API_KEY=your_cohere_key
-GROQ_API_KEY=your_groq_key  # For LLM inference
 NO_PROXY=localhost,127.0.0.1
 ```
 
 **Get free API keys:**
+- Groq: https://console.groq.com/keys (Llama 3.3 70B for problem solving + Whisper ASR - free tier)
 - Pinecone: https://app.pinecone.io/ (vector database for RAG)
-- Cohere: https://dashboard.cohere.com/api-keys (embeddings for RAG)
-- Groq: https://console.groq.com/keys (fast LLM inference)
+- Cohere: https://dashboard.cohere.com/api-keys (embeddings for RAG - free tier)
 
 ### Running the Application
 
@@ -244,11 +244,12 @@ MathMentor/
 
 ### Backend
 - **FastAPI**: High-performance async API framework
-- **Ollama**: LLM inference backends
+- **Groq Llama 3.3 70B Versatile**: LLM for problem solving (free tier)
 - **Pinecone**: Vector database for RAG
+- **Cohere embed-english-v3.0**: Document embeddings (free tier)
 - **SymPy**: Symbolic mathematics engine
 - **Tesseract/EasyOCR**: OCR engines
-- **Whisper**: Speech-to-text transcription
+- **Groq Whisper-large-v3**: Speech-to-text transcription (free tier)
 
 ### Frontend
 - **Streamlit**: Interactive web interface
@@ -279,25 +280,6 @@ GET  /history              - Retrieve problem history
 GET  /health               - Health check
 ```
 
-## 🎓 Usage Examples
-
-### Basic Problem Solving
-```python
-import requests
-
-response = requests.post('http://localhost:8000/solve', json={
-    "problem": "Solve the quadratic equation x² - 5x + 6 = 0",
-    "settings": {
-        "model": "llama3",
-        "topic_filter": "algebra",
-        "difficulty": "medium"
-    }
-})
-
-solution = response.json()
-print(solution['solution']['steps'])
-```
-
 ### Image Upload (OCR)
 1. Upload image via frontend
 2. Review extracted text
@@ -315,9 +297,9 @@ print(solution['solution']['steps'])
 ### Backend Configuration
 Edit `backend/.env`:
 ```env
-PINECONE_API_KEY=your_key_here
-LLM_PROVIDER=ollama  # or openai
-OLLAMA_BASE_URL=http://localhost:11434
+GROQ_API_KEY=your_groq_key
+PINECONE_API_KEY=your_pinecone_key
+COHERE_API_KEY=your_cohere_key
 ```
 
 ### Frontend Configuration
