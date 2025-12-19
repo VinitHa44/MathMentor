@@ -1,0 +1,12 @@
+# System packages for Streamlit Cloud
+# These will be installed via apt-get
+
+# Tesseract OCR for image text extraction
+tesseract-ocr
+tesseract-ocr-eng
+
+# FFmpeg for audio processing (needed for audio recording)
+ffmpeg
+
+# Additional dependencies
+libtesseract-dev

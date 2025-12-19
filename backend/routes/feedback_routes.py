@@ -5,6 +5,7 @@ Feedback routes
 from fastapi import APIRouter, HTTPException
 from controllers.feedback_controller import FeedbackController
 from schemas.request_response_schemas import FeedbackRequest, FeedbackResponse
+from middleware.security import validate_problem_id, validate_text_input
 
 router = APIRouter()
 controller = FeedbackController()
@@ -22,11 +23,28 @@ async def submit_feedback(request: FeedbackRequest):
         Confirmation of feedback storage
     """
     try:
+        # Validate problem ID
+        problem_id = validate_problem_id(request.problem_id)
+        
+        # Validate feedback type
+        valid_types = ['approve', 'edit', 'reject']
+        if request.feedback_type not in valid_types:
+            raise HTTPException(status_code=400, detail=f"Invalid feedback_type. Must be one of: {valid_types}")
+        
+        # Validate optional fields
+        user_comment = None
+        if request.user_comment:
+            user_comment = validate_text_input(request.user_comment, "user_comment")
+        
+        corrected_solution = None
+        if request.corrected_solution:
+            corrected_solution = validate_text_input(request.corrected_solution, "corrected_solution")
+        
         result = controller.submit_feedback(
-            problem_id=request.problem_id,
+            problem_id=problem_id,
             feedback_type=request.feedback_type,
-            user_comment=request.user_comment,
-            corrected_solution=request.corrected_solution
+            user_comment=user_comment,
+            corrected_solution=corrected_solution
         )
         
         return FeedbackResponse(**result)

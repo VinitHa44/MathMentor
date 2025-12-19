@@ -7,6 +7,7 @@ from io import BytesIO
 from PIL import Image
 from controllers.ocr_controller import OCRController
 from schemas.request_response_schemas import OCRRequest, OCRResponse
+from middleware.security import validate_base64_input, sanitize_for_llm
 
 router = APIRouter()
 controller = OCRController()
@@ -24,7 +25,10 @@ async def extract_text_from_image(request: OCRRequest):
         OCRResponse with extracted text and confidence
     """
     try:
-        result = controller.extract_from_base64(request.image_base64)
+        # Validate base64 input
+        validated_base64 = validate_base64_input(request.image_base64, "image_base64", max_size_mb=10)
+        
+        result = controller.extract_from_base64(validated_base64)
         return OCRResponse(**result)
     
     except Exception as e:

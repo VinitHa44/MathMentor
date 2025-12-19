@@ -5,6 +5,7 @@ ASR routes
 from fastapi import APIRouter, File, UploadFile, HTTPException
 from controllers.asr_controller import ASRController
 from schemas.request_response_schemas import ASRRequest, ASRResponse
+from middleware.security import validate_base64_input
 
 router = APIRouter()
 controller = ASRController()

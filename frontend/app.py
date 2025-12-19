@@ -178,18 +178,24 @@ else:
                             
                             if response.status_code == 200:
                                 result = response.json()
-                                st.session_state.extracted_text = result["text"]
-                                st.session_state.ocr_confidence = result["confidence"]
-                                st.session_state.needs_review = True  # OCR text needs review
-                                # Increment problem counter to force text area refresh
-                                st.session_state.problem_counter += 1
-                                # Clear previous solution and agent trace
-                                st.session_state.solution = None
-                                st.session_state.agent_trace = []
-                                st.session_state.feedback_submitted = False
-                                st.success(f"✅ Text extracted: {result['text'][:100]}...")
-                                st.info(f"Confidence: {result['confidence']:.2%}")
-                                st.rerun()
+                                
+                                # Check if OCR failed due to tesseract not available
+                                if result.get("error") == "tesseract_not_found":
+                                    st.error("❌ OCR is not available in this deployment environment.")
+                                    st.info("💡 **Tip:** Use the **Text Input** tab to type or paste your math problem directly.")
+                                else:
+                                    st.session_state.extracted_text = result["text"]
+                                    st.session_state.ocr_confidence = result["confidence"]
+                                    st.session_state.needs_review = True  # OCR text needs review
+                                    # Increment problem counter to force text area refresh
+                                    st.session_state.problem_counter += 1
+                                    # Clear previous solution and agent trace
+                                    st.session_state.solution = None
+                                    st.session_state.agent_trace = []
+                                    st.session_state.feedback_submitted = False
+                                    st.success(f"✅ Text extracted: {result['text'][:100]}...")
+                                    st.info(f"Confidence: {result['confidence']:.2%}")
+                                    st.rerun()
                             else:
                                 st.error(f"OCR failed: {response.json().get('detail', 'Unknown error')}")
                         except requests.exceptions.Timeout:
@@ -214,16 +220,16 @@ else:
     
     # AUDIO INPUT TAB
     with input_mode[1]:
-        st.markdown("""
-        <div style='background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1)); 
-                    padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(102, 126, 234, 0.2); margin-bottom: 1.5rem;'>
-            <h4 style='margin: 0 0 0.5rem 0; color: #667eea;'>🎤 Voice Input</h4>
-            <div style='background: rgba(102, 126, 234, 0.05); padding: 0.8rem; border-radius: 8px; 
-                        border-left: 3px solid #667eea; font-size: 0.95rem;'>
-                <strong>📝 Tip:</strong> Record your math question or upload an audio file. The system will transcribe it.
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # st.markdown("""
+        # <div style='background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1)); 
+        #             padding: 1.5rem; border-radius: 12px; border: 1px solid rgba(102, 126, 234, 0.2); margin-bottom: 1.5rem;'>
+        #     <h4 style='margin: 0 0 0.5rem 0; color: #667eea;'>🎤 Voice Input</h4>
+        #     <div style='background: rgba(102, 126, 234, 0.05); padding: 0.8rem; border-radius: 8px; 
+        #                 border-left: 3px solid #667eea; font-size: 0.95rem;'>
+        #         <strong>📝 Tip:</strong> Record your math question or upload an audio file. The system will transcribe it.
+        #     </div>
+        # </div>
+        # """, unsafe_allow_html=True)
         
         # Tips for speaking math
         # with st.expander("💡 Tips for Speaking Math", expanded=False):
@@ -260,8 +266,7 @@ else:
         
         if audio_input_method == "🎙️ Record Audio":
             if not AUDIO_RECORDER_AVAILABLE:
-                st.warning("⚠️ Audio recorder component not available. Please use 'Upload Audio File' option instead.")
-                st.info("To enable audio recording, install: `pip install audio-recorder-streamlit`")
+                st.info("📌 Audio recording from browser is not available in this deployment. Please use the '📁 Upload Audio File' option below to transcribe pre-recorded audio files.")
             else:
                 st.info("🎤 Click the button below to start/stop recording")
                 
@@ -555,10 +560,16 @@ else:
         # Show confidence if OCR/ASR was used
         if hasattr(st.session_state, 'ocr_confidence'):
             confidence = st.session_state.ocr_confidence
-            render_confidence_indicator(confidence, "OCR Confidence")
             
-            if confidence < 0.85:
-                st.warning("⚠️ Low OCR confidence detected. Please review and correct the extracted text.")
+            # Check if OCR errored out
+            if confidence == 0.0 and "OCR is not available" in st.session_state.extracted_text:
+                st.error("❌ OCR is not available in this deployment environment.")
+                st.info("💡 **Tip:** Use the **Text Input** tab to type or paste your math problem directly.")
+            else:
+                render_confidence_indicator(confidence, "OCR Confidence")
+                
+                if confidence < 0.85:
+                    st.warning("⚠️ Low OCR confidence detected. Please review and correct the extracted text.")
         
         elif hasattr(st.session_state, 'asr_confidence'):
             confidence = st.session_state.asr_confidence

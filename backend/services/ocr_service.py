@@ -99,6 +99,15 @@ class OCRService:
                 "confidence": round(avg_confidence, 2),
                 "provider": "tesseract"
             }
+            
+        except pytesseract.TesseractNotFoundError:
+            # Tesseract not installed - return graceful error
+            return {
+                "text": "Tesseract OCR is not available in this deployment environment. Please use the Text Input tab to enter your math problem directly.",
+                "confidence": 0.0,
+                "provider": "tesseract",
+                "error": "tesseract_not_found"
+            }
         
         except Exception as e:
             print(f"Tesseract error: {str(e)}")

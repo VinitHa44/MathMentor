@@ -4,6 +4,7 @@ Uses Groq's llama-3.3-70b-versatile for math problem solving
 """
 
 import os
+import re
 from typing import Dict, Any, Optional
 
 try:
@@ -44,6 +45,21 @@ class LLMService:
                 print(f"❌ Error initializing Groq client: {e}")
                 self.client = None
     
+    def _sanitize_prompt(self, text: str) -> str:
+        """Sanitize prompt to prevent injection"""
+        # Remove excessive special tokens
+        text = text.replace('<|im_start|>', '')
+        text = text.replace('<|im_end|>', '')
+        text = text.replace('[INST]', '')
+        text = text.replace('[/INST]', '')
+        text = text.replace('<s>', '')
+        text = text.replace('</s>', '')
+        
+        # Normalize whitespace
+        text = re.sub(r'\s+', ' ', text)
+        
+        return text.strip()
+    
     def generate(self, prompt: str, system: Optional[str] = None, temperature: float = 0.1, max_tokens: int = 2000) -> Dict[str, Any]:
         """
         Generate completion from prompt using Groq
@@ -65,10 +81,14 @@ class LLMService:
             }
         
         try:
+            # Sanitize inputs
+            sanitized_prompt = self._sanitize_prompt(prompt)
+            sanitized_system = self._sanitize_prompt(system) if system else None
+            
             messages = []
-            if system:
-                messages.append({"role": "system", "content": system})
-            messages.append({"role": "user", "content": prompt})
+            if sanitized_system:
+                messages.append({"role": "system", "content": sanitized_system})
+            messages.append({"role": "user", "content": sanitized_prompt})
             
             completion = self.client.chat.completions.create(
                 model=self.model_name,

@@ -5,6 +5,7 @@ History routes
 from fastapi import APIRouter, HTTPException
 from controllers.history_controller import HistoryController
 from schemas.request_response_schemas import HistoryResponse, SimilarProblemsResponse
+from middleware.security import validate_limit, validate_problem_id
 
 router = APIRouter()
 controller = HistoryController()
