@@ -112,7 +112,7 @@ if st.session_state.show_memory:
     st.markdown("## 📚 Memory & History")
     render_memory_panel(st.session_state.history)
     
-    if st.button("← Back to Solver", width='stretch'):
+    if st.button("← Back to Solver", use_container_width=True):
         st.session_state.show_memory = False
         st.rerun()
 else:
@@ -141,10 +141,10 @@ else:
             if uploaded_image:
                 # Display uploaded image
                 image = Image.open(uploaded_image)
-                st.image(image, caption="Uploaded Image", width='stretch')
+                st.image(image, caption="Uploaded Image", use_column_width=True)
                 
                 # Extract text button
-                if st.button("🔍 Extract Text from Image", type="primary", width='stretch'):
+                if st.button("🔍 Extract Text from Image", type="primary", use_container_width=True):
                     with st.spinner("Extracting text using OCR..."):
                         try:
                             # Convert image to base64
@@ -317,7 +317,7 @@ else:
             if uploaded_audio:
                 st.audio(uploaded_audio)
                 
-                if st.button("🎯 Transcribe Audio", type="primary", width='stretch'):
+                if st.button("🎯 Transcribe Audio", type="primary", use_container_width=True):
                     with st.spinner("Transcribing audio..."):
                         try:
                             # Convert audio to base64
@@ -381,7 +381,7 @@ else:
             key="text_input_area"
         )
         
-        if st.button("➡️ Submit Problem", type="primary", width='stretch'):
+        if st.button("➡️ Submit Problem", type="primary", use_container_width=True):
             if text_input.strip():
                 # Clear old solution and HITL state before solving new problem
                 st.session_state.solution = None
@@ -555,7 +555,7 @@ else:
         col1, col2, col3 = st.columns([1, 1, 2])
         
         with col1:
-            if st.button("✅ Confirm & Solve", type="primary", width='stretch'):
+            if st.button("✅ Confirm & Solve", type="primary", use_container_width=True):
                 st.session_state.extracted_text = edited_text
                 
                 # Clear old solution and HITL state before solving new problem
@@ -726,7 +726,7 @@ else:
                 st.rerun()
         
         with col2:
-            if st.button("🗑️ Clear", width='stretch'):
+            if st.button("🗑️ Clear", use_container_width=True):
                 st.session_state.extracted_text = ""
                 st.session_state.needs_review = False
                 # Increment problem counter to force text area refresh
