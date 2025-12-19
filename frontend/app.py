@@ -561,9 +561,9 @@ else:
             confidence = st.session_state.ocr_confidence
             
             # Check if OCR errored out
-            if confidence == 0.0 and "OCR is not available" in st.session_state.extracted_text:
-                st.error("❌ OCR is not available in this deployment environment.")
-                st.info("💡 **Tip:** Use the **Text Input** tab to type or paste your math problem directly.")
+            if confidence == 0.0 and ("tesseract" in st.session_state.extracted_text.lower() or "ocr error" in st.session_state.extracted_text.lower()):
+                st.error("❌ OCR processing encountered an issue.")
+                st.info("💡 **Tip:** The extracted text below shows the error details. You can use the **Text Input** tab instead.")
             else:
                 render_confidence_indicator(confidence, "OCR Confidence")
                 
